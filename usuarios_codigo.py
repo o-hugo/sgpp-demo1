@@ -1,27 +1,34 @@
-"""Usuários do SGPP definidos no próprio código (solução provisória).
-
-Para adicionar alguém: rode `python gerar_usuario.py`, responda às perguntas e cole a entrada
-que ele imprimir dentro do dicionário abaixo. Para remover, apague a entrada.
-
-A senha NUNCA é escrita aqui em texto: só o hash Argon2id, que não permite descobrir a senha.
-Para trocar a senha de alguém, gere a entrada de novo e substitua a antiga.
-
-Campos de cada usuário:
-    nome        nome completo, igual ao que consta como Gestor nos projetos (é por ele que
-                "Meus Projetos" encontra os projetos da pessoa)
-    nivel       administrador, planejamento, comite, gestor_unidade, gestor_projeto ou leitor
-    senha_hash  gerado pelo script
-    unidade     opcional
-
-Mudanças neste arquivo valem depois que o app é reiniciado (no Streamlit Cloud, a cada novo commit).
-Além destes usuários, existe a conta de emergência definida nos Secrets ([login] administrador).
-"""
+"""Usuários de DEMONSTRAÇÃO. Todos usam a mesma senha, que consta no README do Space."""
 
 USUARIOS = {
-    # Exemplo (apague o # e troque pelos dados gerados por gerar_usuario.py):
-    # "nome.sobrenome": {
-    #     "nome": "Nome Completo da Pessoa",
-    #     "nivel": "planejamento",
-    #     "senha_hash": "$argon2id$v=19$m=65536,t=3,p=4$...",
-    # },
+    "paula.plan": {
+        "nome": "Paula Planejamento Dias",
+        "nivel": "planejamento",
+        "unidade": "DPLAN",
+        "senha_hash": "$argon2id$v=19$m=65536,t=3,p=4$TzKRgBm9MoFclmYqQcWQAA$jD1pbdxcTHEwXKbAi0cv3mfRmPYVbA7/6B4W6YTWjD0",
+    },
+    "carlos.comite": {
+        "nome": "Carlos Comitê Silva",
+        "nivel": "comite",
+        "unidade": "Gabinete da PGJ",
+        "senha_hash": "$argon2id$v=19$m=65536,t=3,p=4$rMsqPCkUv2GxioQc1m+mgw$zt1J67lN53cEzlSuLHAolBNeom4wxEMS7TdoghaPzUM",
+    },
+    "membro1": {
+        "nome": "Membro 1",
+        "nivel": "gestor_projeto",
+        "unidade": "NUPA",
+        "senha_hash": "$argon2id$v=19$m=65536,t=3,p=4$XwK2bEjRN+vJrgskCHtB2w$9zIHXllLQ3v7cakpN7wOGiYl/xPfc7Mw1mUtb5I5WUE",
+    },
+    "membro2": {
+        "nome": "Membro 2",
+        "nivel": "gestor_unidade",
+        "unidade": "1ª PJ Parintins",
+        "senha_hash": "$argon2id$v=19$m=65536,t=3,p=4$XiAiOAjztCO2EOrl32rJYg$Fzbo9riGJJaUBv+m5bngKF9V4wlxpzSfD0dhh87nU5w",
+    },
+    "leitor.demo": {
+        "nome": "Leitor de Demonstração",
+        "nivel": "leitor",
+        "unidade": "DPLAN",
+        "senha_hash": "$argon2id$v=19$m=65536,t=3,p=4$8oQh9QJciYOVGhUvUOm7rw$1SXLDX9s6dK74T/kMT7cc8tZPbt/0M0M7LXDCe3HSdw",
+    },
 }

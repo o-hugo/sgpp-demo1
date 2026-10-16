@@ -1,7 +1,4 @@
-.streamlit/secrets.toml
 __pycache__/
-*.xlsx.tmp
-.venv/
-venv/
+*.pyc
+.streamlit/secrets.toml
 DADOS_INTERNOS - SGPP.xlsx
-build/

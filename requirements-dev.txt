@@ -1,0 +1,6 @@
+﻿-r requirements.txt
+pytest==9.1.1
+# Para tirar prints do app (opcional)
+playwright==1.64.0
+# Para publicar a demonstração no Hugging Face (scripts/publicar_demo_huggingface.py)
+huggingface_hub==2.2.0

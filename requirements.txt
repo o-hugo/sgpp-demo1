@@ -1,0 +1,10 @@
+﻿streamlit==1.65.0
+pandas==3.0.6
+plotly==7.1.0
+openpyxl==3.1.5
+xlsxwriter==3.2.9
+ldap3==2.9.1
+msal==1.39.0
+requests==2.34.2
+argon2-cffi==25.1.0
+pillow==12.3.0

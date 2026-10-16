@@ -1,0 +1,7 @@
+# Tema institucional, mesmas cores do painel "MP em Foco - Panorama" (tema sqlbi.json)
+[theme]
+base = "light"
+primaryColor = "#6F0000"
+backgroundColor = "#FBF7F0"
+secondaryBackgroundColor = "#F4EEE4"
+textColor = "#404040"

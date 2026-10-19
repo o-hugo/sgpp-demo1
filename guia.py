@@ -120,6 +120,7 @@ SECOES = [
         "passos": [
             "Abra **Acompanhamento** e escolha o projeto. As abas reúnem as atualizações, os pareceres, os comentários, os dados completos e a linha do tempo.",
             "Quem é gestor do projeto registra atualizações a qualquer momento, sem precisar liberar a edição. O histórico nunca é apagado.",
+            "Para ver tudo sobre um projeto, use **Ver ficha** num cartão do **Quadro** ou marque a caixa no início da linha na tabela do **Dashboard**. A ficha reúne os dados completos, as atualizações, os pareceres, os comentários e a linha do tempo, e leva ao **Acompanhamento** para você agir.",
             "No **Quadro**, mova um cartão para mudar o status (Em elaboração, Em execução, Concluído, Paralisado). Com o projeto travado, peça a liberação antes.",
             "O Leitor só consulta. O Comitê consulta o quadro, mas não move cartões.",
         ],

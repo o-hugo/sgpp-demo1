@@ -1121,6 +1121,42 @@ def pedir_liberacao(numero, motivo):
 
 # ------------------------------------------------------------------ acompanhamento
 
+def html_ficha_cabecalho(projeto):
+    """Cabeçalho da ficha de um projeto: código, nome, gestor, unidade, prazo e etiquetas de situação."""
+    chips = [etiqueta(projeto['Status']), etiqueta(situacao_da_edicao(projeto), "suave")]
+    if projeto['SITUACAO_REGISTRO'] == projetos.SITUACAO_ARQUIVADO:
+        chips.append(etiqueta("Arquivado", "alerta"))
+    revisao = projetos.texto(projeto['REVISAO'])
+    if revisao:
+        chips.append(etiqueta(revisao, "ok" if revisao == projetos.REVISAO_CONCLUIDA else "atencao" if revisao in (projetos.REVISAO_DEVOLVIDO, projetos.REVISAO_REENVIADO) else "suave"))
+    datas = " a ".join(d for d in (projetos.texto(projeto['INICIO_PREVISTO']), projetos.texto(projeto['TERMINO_PREVISTO'])) if d)
+    return (f"<div class='ficha-projeto'><div class='codigo'>{esc(projeto['CODIGO']) or 'Sem código'}</div>"
+            f"<div class='nome'>{esc(projeto['Nome da Iniciativa'])}</div>"
+            f"<div class='meta'>{esc(projeto['Gestor'])} · {esc(projeto['Unidade'])}"
+            f"{' · Previsto: ' + esc(datas) if datas else ''}</div><div>{''.join(chips)}</div></div>")
+
+def mostrar_atualizacoes(abas, n):
+    atualizacoes = projetos.do_projeto(abas, "Atualizacoes", n)
+    if atualizacoes.empty:
+        st.caption("Nenhuma atualização registrada.")
+    for r in atualizacoes.itertuples():
+        tom = {"Em dia": "ok", "Atenção": "atencao", "Atrasado": "alerta"}.get(r.situacao, "")
+        data_br = projetos.parse_data(r.data_referencia)
+        with st.container(border=True):
+            st.markdown(f"**{data_br.strftime('%d/%m/%Y') if data_br else esc(r.data_referencia)}** {etiqueta(r.situacao, tom)}", unsafe_allow_html=True)
+            st.markdown(f"<p class='texto-livre'>{esc(r.texto)}</p>", unsafe_allow_html=True)
+            st.caption(f"{projetos.texto(r.autor_nome)}, registrado em {r.registrado_em}")
+
+def mostrar_pareceres(abas, n):
+    pareceres = projetos.do_projeto(abas, "Pareceres", n)
+    if pareceres.empty:
+        st.caption("Nenhum parecer registrado.")
+    for r in pareceres.itertuples():
+        with st.container(border=True):
+            st.markdown(f"**{esc(r.conclusao) or 'Sem conclusão'}** {etiqueta(projetos.texto(r.autor_nome), 'suave')}", unsafe_allow_html=True)
+            st.markdown(f"<p class='texto-livre'>{esc(r.texto)}</p>", unsafe_allow_html=True)
+            st.caption(f"Registrado em {r.registrado_em}")
+
 def tela_acompanhamento(df_completo, modo_sharepoint):
     faixa_titulo("Acompanhamento", "Atualizações, pareceres e linha do tempo de cada projeto", "timeline")
     nivel = st.session_state['nivel']
@@ -1148,18 +1184,7 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
     arquivado = projeto['SITUACAO_REGISTRO'] == projetos.SITUACAO_ARQUIVADO
     dono = projetos.texto(projeto['Gestor']).lower() == nome.lower()
 
-    chips = [etiqueta(projeto['Status']), etiqueta(situacao_da_edicao(projeto), "suave")]
-    if arquivado:
-        chips.append(etiqueta("Arquivado", "alerta"))
-    revisao = projetos.texto(projeto['REVISAO'])
-    if revisao:
-        chips.append(etiqueta(revisao, "ok" if revisao == projetos.REVISAO_CONCLUIDA else "atencao" if revisao in (projetos.REVISAO_DEVOLVIDO, projetos.REVISAO_REENVIADO) else "suave"))
-    datas = " a ".join(d for d in (projetos.texto(projeto['INICIO_PREVISTO']), projetos.texto(projeto['TERMINO_PREVISTO'])) if d)
-    st.markdown(
-        f"<div class='ficha-projeto'><div class='codigo'>{esc(projeto['CODIGO']) or 'Sem código'}</div>"
-        f"<div class='nome'>{esc(projeto['Nome da Iniciativa'])}</div>"
-        f"<div class='meta'>{esc(projeto['Gestor'])} · {esc(projeto['Unidade'])}"
-        f"{' · Previsto: ' + esc(datas) if datas else ''}</div><div>{''.join(chips)}</div></div>", unsafe_allow_html=True)
+    st.markdown(html_ficha_cabecalho(projeto), unsafe_allow_html=True)
 
     pode_atualizar = not arquivado and (projetos.pode("atualizar_qualquer_projeto", nivel) or (dono and nivel != "leitor"))
     pode_parecer = not arquivado and projetos.pode("emitir_parecer", nivel)
@@ -1191,16 +1216,7 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
                         st.rerun()
         elif arquivado:
             alerta_info("Projeto arquivado: não recebe novas atualizações.")
-        atualizacoes = projetos.do_projeto(abas, "Atualizacoes", escolhido)
-        if atualizacoes.empty:
-            st.caption("Nenhuma atualização registrada.")
-        for r in atualizacoes.itertuples():
-            tom = {"Em dia": "ok", "Atenção": "atencao", "Atrasado": "alerta"}.get(r.situacao, "")
-            data_br = projetos.parse_data(r.data_referencia)
-            with st.container(border=True):
-                st.markdown(f"**{data_br.strftime('%d/%m/%Y') if data_br else esc(r.data_referencia)}** {etiqueta(r.situacao, tom)}", unsafe_allow_html=True)
-                st.markdown(f"<p class='texto-livre'>{esc(r.texto)}</p>", unsafe_allow_html=True)
-                st.caption(f"{projetos.texto(r.autor_nome)}, registrado em {r.registrado_em}")
+        mostrar_atualizacoes(abas, escolhido)
 
     with aba_par:
         if not ve_pareceres:
@@ -1223,14 +1239,7 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
                         else:
                             st.session_state['aviso_acompanhamento'] = "Parecer registrado."
                             st.rerun()
-            pareceres = projetos.do_projeto(abas, "Pareceres", escolhido)
-            if pareceres.empty:
-                st.caption("Nenhum parecer registrado.")
-            for r in pareceres.itertuples():
-                with st.container(border=True):
-                    st.markdown(f"**{esc(r.conclusao) or 'Sem conclusão'}** {etiqueta(projetos.texto(r.autor_nome), 'suave')}", unsafe_allow_html=True)
-                    st.markdown(f"<p class='texto-livre'>{esc(r.texto)}</p>", unsafe_allow_html=True)
-                    st.caption(f"Registrado em {r.registrado_em}")
+            mostrar_pareceres(abas, escolhido)
 
     with aba_com:
         bloco_comentarios(abas, projeto, "acomp", 'aviso_acompanhamento')
@@ -1579,7 +1588,7 @@ def prazo_vencido(linha):
     return bool(termino and termino < datetime.now().date() and projetos.texto(linha.get('Status')) in ("Em elaboração", "Em execução"))
 
 def tela_quadro(df_raw):
-    faixa_titulo("Quadro", "Os projetos por status: mova um cartão para mudar o status", "view_kanban")
+    faixa_titulo("Quadro", "Os projetos por status: veja a ficha de um cartão ou mova-o para mudar o status", "view_kanban")
     nivel = st.session_state['nivel']
     nome = st.session_state['nome']
     mensagem = st.session_state.pop('aviso_quadro', None)
@@ -1622,6 +1631,10 @@ def tela_quadro(df_raw):
                         f"<div class='nome'>{esc(linha['Nome da Iniciativa']) or 'Sem nome'}</div>"
                         f"<div class='meta'>{esc(linha['Gestor']) or 'Sem gestor'} · {esc(linha['Unidade']) or 'Sem unidade'}</div>"
                         f"<div>{''.join(chips)}</div></div>", unsafe_allow_html=True)
+                    # Um embaixo do outro: o cartão é estreito e os rótulos lado a lado ficavam cortados
+                    if st.button("Ver ficha", icon=":material/visibility:", key=f"ver_{n}", use_container_width=True,
+                                 help="Abrir a ficha completa do projeto"):
+                        abrir_ficha(n)
                     if projetos.pode_mover_status(linha, nivel, nome)[0]:
                         with st.popover("Mover para", icon=":material/swap_horiz:", use_container_width=True):
                             for i, destino in enumerate(projetos.STATUS):
@@ -1678,6 +1691,70 @@ def tela_pendencias(df_completo):
                                 'gravidade': 'Gravidade', 'pendencias': 'Pendências', 'qtd': 'Qtd'})
     st.download_button("Baixar lista (.csv)", filtrado.drop(columns='n').to_csv(index=False).encode('utf-8'),
                        "PENDENCIAS_MPAM.csv", "text/csv", icon=":material/download:", key="baixar_pendencias")
+
+def abrir_ficha(id_projeto):
+    """Pede a abertura da ficha: quem a abre é tela_principal, na próxima execução do script."""
+    st.session_state['ficha_pendente'] = str(id_projeto)
+    st.rerun()
+
+def ir_para_acompanhamento(id_projeto):
+    """Vai para a tela Acompanhamento já com o projeto escolhido. Aplicado por tela_principal, antes de o menu existir."""
+    st.session_state['navegar_para'] = str(id_projeto)
+    st.rerun()
+
+@st.dialog("Ficha do projeto", width="large")
+def dialogo_ficha(id_projeto):
+    """Tudo sobre um projeto, só para consulta: dados, atualizações, pareceres, comentários e linha do tempo.
+    Quem pode agir (atualizar, comentar, emitir parecer) faz isso no Acompanhamento, que a ficha abre."""
+    df_completo, _ = carregar_dados()
+    achado = df_completo[df_completo['ID_PROJETO'] == str(id_projeto)] if not df_completo.empty else df_completo
+    achado = achado[achado['SITUACAO_REGISTRO'].isin([projetos.SITUACAO_ATIVO, projetos.SITUACAO_ARQUIVADO])] if not achado.empty else achado
+    if achado.empty:
+        alerta_erro("Projeto não encontrado. Ele pode ter sido excluído.")
+        return
+    projeto = achado.iloc[0]
+    nivel = st.session_state['nivel']
+    nome = st.session_state['nome']
+    n = projetos.chave(projeto)
+    coordenacao = nivel in ("administrador", "planejamento", "comite")
+    dono = projetos.texto(projeto['Gestor']).lower() == nome.lower()
+    st.markdown(html_ficha_cabecalho(projeto), unsafe_allow_html=True)
+    sei = projetos.texto(projeto['SEI'])
+    if sei:
+        st.caption("Nº SEI do projeto (use o ícone de copiar):")
+        st.code(sei, language=None)
+
+    abas = ler_abas_ou_erro()
+    rotulos = [":material/description: Dados completos", ":material/update: Atualizações"]
+    if dono or coordenacao:
+        rotulos.append(":material/rate_review: Pareceres")
+    if projetos.pode_comentar(nivel, nome, projeto['Gestor']):
+        rotulos.append(":material/forum: Comentários")
+    rotulos.append(":material/timeline: Linha do tempo")
+    abas_ui = dict(zip(rotulos, st.tabs(rotulos)))
+
+    with abas_ui[rotulos[0]]:
+        st.markdown(html_dados_completos(projeto, coordenacao=coordenacao), unsafe_allow_html=True)
+    for rotulo, aba in abas_ui.items():
+        if rotulo == rotulos[0]:
+            continue
+        with aba:
+            if abas is None:
+                st.caption("Não foi possível ler os dados internos agora.")
+            elif "Atualizações" in rotulo:
+                mostrar_atualizacoes(abas, n)
+            elif "Pareceres" in rotulo:
+                mostrar_pareceres(abas, n)
+            elif "Comentários" in rotulo:
+                login = st.session_state['login_rede']
+                st.markdown(html_comentarios(projetos.comentarios_do_projeto(abas, n), eu=login), unsafe_allow_html=True)
+            else:
+                st.markdown(html_linha_do_tempo(projetos.linha_do_tempo(abas, n), projeto.get('Ano de criação')), unsafe_allow_html=True)
+
+    st.divider()
+    if st.button("Abrir no Acompanhamento", icon=":material/open_in_new:", type="primary", key=f"ficha_abrir_{n}",
+                 help="Para registrar atualização, comentar ou emitir parecer"):
+        ir_para_acompanhamento(n)
 
 @st.dialog("Guia do SGPP", width="large")
 def dialogo_guia(boas_vindas=False):
@@ -1751,15 +1828,24 @@ def tela_principal():
     if pode_gerenciar_usuarios(nivel_atual):
         opcoes_menu.append(PAGINAS["usuarios"])
 
+    destino = st.session_state.pop('navegar_para', None)
+    if destino and PAGINAS["acompanhamento"] in opcoes_menu:
+        # Tem de ser antes de os widgets existirem nesta execução
+        st.session_state['menu_principal'] = PAGINAS["acompanhamento"]
+        st.session_state['acomp_escopo'] = "Todo o portfólio"
+        st.session_state['acomp_projeto'] = destino
     rotulo_lateral("Navegação")
-    menu = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed")
+    menu = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed", key="menu_principal")
 
     rotulo_lateral("Atalhos")
     pediu_guia = st.sidebar.button("Guia do SGPP", icon=":material/menu_book:", use_container_width=True, key="abrir_guia")
     primeiro_acesso = st.session_state.get('guia_visto_por') != st.session_state['login_rede']
     st.session_state['guia_visto_por'] = st.session_state['login_rede']
+    ficha_pendente = st.session_state.pop('ficha_pendente', None)
     if pediu_guia or primeiro_acesso:
         dialogo_guia(boas_vindas=primeiro_acesso and not pediu_guia)
+    elif ficha_pendente:
+        dialogo_ficha(ficha_pendente)
     with st.sidebar.expander("Copiar nº do SEI", icon=":material/content_copy:"):
         if not df_raw.empty and 'SEI' in df_raw.columns:
             por_id_side = {r['ID_PROJETO']: r for _, r in df_raw.iterrows()}
@@ -1866,19 +1952,28 @@ def tela_principal():
             # Barra Expressa de Cópia em 1 Clique para o SEI
             renderizar_copiador_sei(df_dash, "dash")
             
-            st.caption("Dica: clique em um número da coluna **Nº SEI** e use `Ctrl+C` para copiá-lo.")
+            st.caption("Marque a caixa no início de uma linha para abrir a ficha completa do projeto. "
+                       "Para copiar um número, clique no **Nº SEI** e use `Ctrl+C`.")
             colunas_consulta = ['CODIGO', 'Nº', 'Nome da Iniciativa', 'Projeto/Programa/Boa Prática', 'Área de Atuação', 'Unidade', 'Município', 'Gestor', 'Status', 'SEI', 'Link_SEI']
             cols_existentes = [c for c in colunas_consulta if c in df_dash.columns]
             df_tabela_dash = filtrar_tabela(df_dash, "dash")
-            st.dataframe(
+            # A chave muda a cada abertura: a seleção zera e a mesma linha pode ser marcada de novo depois de fechar a ficha
+            versao_tabela = st.session_state.get('tabela_dash_v', 0)
+            marcadas = st.dataframe(
                 df_tabela_dash[cols_existentes],
                 use_container_width=True,
                 hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key=f"tabela_dash_{versao_tabela}",
                 column_config={
                     "SEI": st.column_config.TextColumn("Nº SEI"),
                     "Link_SEI": st.column_config.LinkColumn("Link", display_text="Abrir SEI")
                 }
             )
+            if marcadas.selection.rows:
+                st.session_state['tabela_dash_v'] = versao_tabela + 1
+                abrir_ficha(df_tabela_dash.iloc[marcadas.selection.rows[0]]['ID_PROJETO'])
 
     # --------------------------------------------------------------------------
     # MÓDULO 3: AUTOGESTÃO DO USUÁRIO (COM EXCLUSÃO REGISTRADA E COPIADOR SEI)

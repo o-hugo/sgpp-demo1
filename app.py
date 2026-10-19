@@ -13,6 +13,7 @@ import secrets
 
 import contas
 import dados_internos
+import guia
 import projetos
 import usuarios_codigo
 
@@ -1682,6 +1683,26 @@ def tela_pendencias(df_completo):
     st.download_button("Baixar lista (.csv)", filtrado.drop(columns='n').to_csv(index=False).encode('utf-8'),
                        "PENDENCIAS_MPAM.csv", "text/csv", icon=":material/download:", key="baixar_pendencias")
 
+@st.dialog("Guia do SGPP", width="large")
+def dialogo_guia(boas_vindas=False):
+    """Janela flutuante com o passo a passo, filtrada pelo nível. Abre no primeiro acesso e pelo botão Guia do menu."""
+    nivel = st.session_state['nivel']
+    secoes = guia.secoes_para(nivel)
+    if boas_vindas:
+        primeiro_nome = st.session_state['nome'].split()[0] if st.session_state['nome'].split() else ""
+        st.markdown(f"**Bem-vindo ao SGPP{', ' + primeiro_nome if primeiro_nome else ''}.**")
+    st.caption(guia.TEXTO_INICIAL)
+    rotulos = {s['id']: f"{s['numero']}  {s['titulo']}" for s in secoes}
+    escolhida = st.pills("Seções do guia", list(rotulos), format_func=rotulos.get, selection_mode="single",
+                         default=secoes[0]['id'], key=f"guia_secao_{nivel}", label_visibility="collapsed")
+    secao = next((s for s in secoes if s['id'] == escolhida), secoes[0])
+    st.markdown(
+        f"<div class='guia-secao'><span class='guia-numero'>{secao['numero']}</span>"
+        f"<div><div class='guia-titulo'>{html.escape(secao['titulo'])}</div>"
+        f"<p>{html.escape(secao['resumo'])}</p></div></div>", unsafe_allow_html=True)
+    st.markdown("\n".join(f"{i}. {passo}" for i, passo in enumerate(secao['passos'], 1)))
+    st.caption("Para abrir de novo, use o botão Guia do SGPP, em Atalhos, no menu.")
+
 def tela_principal():
     armazenamento = obter_armazenamento()
     modo_sharepoint = isinstance(armazenamento, ArmazenamentoGraph)
@@ -1730,6 +1751,11 @@ def tela_principal():
     menu = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed")
 
     rotulo_lateral("Atalhos")
+    pediu_guia = st.sidebar.button("Guia do SGPP", icon=":material/menu_book:", use_container_width=True, key="abrir_guia")
+    primeiro_acesso = st.session_state.get('guia_visto_por') != st.session_state['login_rede']
+    st.session_state['guia_visto_por'] = st.session_state['login_rede']
+    if pediu_guia or primeiro_acesso:
+        dialogo_guia(boas_vindas=primeiro_acesso and not pediu_guia)
     with st.sidebar.expander("Copiar nº do SEI", icon=":material/content_copy:"):
         if not df_raw.empty and 'SEI' in df_raw.columns:
             por_id_side = {r['ID_PROJETO']: r for _, r in df_raw.iterrows()}

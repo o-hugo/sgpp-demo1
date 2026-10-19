@@ -236,3 +236,13 @@ hr { border-color: var(--areia); margin: var(--e5) 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ---------- Guia (janela flutuante) ---------- */
+.guia-secao {
+  display: flex; gap: var(--e4); align-items: flex-start;
+  margin: var(--e3) 0 var(--e4); padding: var(--e4);
+  background: var(--creme); border: 1px solid var(--areia); border-left: 4px solid var(--ouro); border-radius: var(--raio);
+}
+.guia-numero { flex: none; min-width: 2ch; font-size: var(--t-lg); font-weight: 700; line-height: 1.2; color: var(--vinho); }
+.guia-titulo { font-size: var(--t-lg); font-weight: 700; line-height: 1.2; color: var(--vinho); }
+.guia-secao p { margin: var(--e1) 0 0; color: var(--texto-suave); }

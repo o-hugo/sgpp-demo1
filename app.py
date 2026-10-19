@@ -1700,7 +1700,15 @@ def dialogo_guia(boas_vindas=False):
         f"<div class='guia-secao'><span class='guia-numero'>{secao['numero']}</span>"
         f"<div><div class='guia-titulo'>{html.escape(secao['titulo'])}</div>"
         f"<p>{html.escape(secao['resumo'])}</p></div></div>", unsafe_allow_html=True)
-    st.markdown("\n".join(f"{i}. {passo}" for i, passo in enumerate(secao['passos'], 1)))
+    if secao.get('intro'):
+        st.caption(secao['intro'])
+    if secao['passos']:
+        st.markdown("\n".join(f"{i}. {passo}" for i, passo in enumerate(secao['passos'], 1)))
+    if secao.get('partes'):
+        with st.container(height=420, border=False):  # a lista é longa: rola aqui e as abas ficam à vista
+            for parte in secao['partes']:
+                no_sgpp = f"\n\n:material/check_circle: No SGPP: {', '.join(parte['no_sgpp'])}" if parte['no_sgpp'] else ""
+                st.markdown(f"**{parte['numero']}. {parte['titulo']}**\n\n{parte['orientacao']}{no_sgpp}")
     st.caption("Para abrir de novo, use o botão Guia do SGPP, em Atalhos, no menu.")
 
 def tela_principal():

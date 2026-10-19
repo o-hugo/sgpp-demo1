@@ -131,11 +131,30 @@ class ArmazenamentoGraph:
         return resposta.json()["eTag"]
 
 
+class ArmazenamentoSomenteLeitura:
+    """Envolve um armazenamento e recusa qualquer gravação.
+
+    A planilha original do Power BI é aberta assim: o SGPP a lê (uma vez, para copiar os projetos para a
+    própria fonte de dados) e nunca a grava. Mesmo que um erro de programação peça a gravação, ela falha.
+    """
+
+    def __init__(self, armazenamento):
+        self.envolvido = armazenamento
+        self.descricao = armazenamento.descricao
+
+    def ler(self):
+        return self.envolvido.ler()
+
+    def gravar(self, conteudo, etag):
+        raise ErroArmazenamento("A planilha original é somente leitura: o SGPP nunca grava nela.")
+
+
 def criar_armazenamento(config_onedrive, caminho_local, chave_item="item_id"):
     """Usa o SharePoint se a seção [onedrive] dos secrets estiver completa; senão, o arquivo local.
 
-    `chave_item` escolhe qual arquivo da mesma biblioteca usar: "item_id" é a planilha de projetos e
-    "item_id_interno" é a planilha interna (usuários, rascunhos, pareceres, histórico).
+    `chave_item` escolhe qual arquivo da mesma biblioteca usar: "item_id" é a planilha original do Power BI
+    (só leitura para o SGPP) e "item_id_interno" é a fonte de dados do SGPP (projetos, usuários, rascunhos,
+    pareceres, histórico).
     """
     comuns = ("tenant_id", "client_id", "client_secret", "drive_id")
     if config_onedrive and all(config_onedrive.get(c) for c in (*comuns, chave_item)):

@@ -18,8 +18,8 @@ import projetos
 import usuarios_codigo
 
 from armazenamento import (
-    ArmazenamentoGraph, ArmazenamentoLocal, ArquivoBloqueado, ConflitoDeVersao, ErroArmazenamento,
-    criar_armazenamento
+    ArmazenamentoGraph, ArmazenamentoLocal, ArmazenamentoSomenteLeitura, ArquivoBloqueado, ConflitoDeVersao,
+    ErroArmazenamento, criar_armazenamento
 )
 
 # Importação segura da biblioteca LDAP para integração com Active Directory da TI/MPAM
@@ -173,8 +173,13 @@ def ler_secao_secrets(nome_secao):
 
 @st.cache_resource
 def obter_armazenamento():
-    # Com a seção [onedrive] preenchida, lê e grava direto no SharePoint; sem ela, usa o arquivo local
-    return criar_armazenamento(ler_secao_secrets("onedrive"), obter_caminho_ativo())
+    # A planilha original do Power BI (no SharePoint, se a seção [onedrive] estiver preenchida; senão, o arquivo local).
+    # O SGPP só a lê, uma vez, para copiar os projetos para a própria fonte de dados, e nunca a grava: este
+    # armazenamento recusa qualquer gravação.
+    return ArmazenamentoSomenteLeitura(criar_armazenamento(ler_secao_secrets("onedrive"), obter_caminho_ativo()))
+
+def em_sharepoint():
+    return isinstance(obter_armazenamento().envolvido, ArmazenamentoGraph)
 
 # ==============================================================================
 # 2. ÁREA EXCLUSIVA PARA A TI DO MPAM (INTEGRAÇÃO ACTIVE DIRECTORY / LDAP)
@@ -494,20 +499,12 @@ if 'autenticado' not in st.session_state:
 # ==============================================================================
 # 4. MOTOR DE DADOS, INTEGRAÇÃO SEI E REGISTRO DE EXCLUSÃO
 # ==============================================================================
-def _preparar_dataframe(conteudo):
-    if conteudo is None:
-        return pd.DataFrame(), {}
+def _preparar_dataframe(df):
+    """Prepara a aba Projetos para as telas: colunas de controle, códigos, ids e SEI. DataFrame vazio se não há projetos."""
+    if df is None or df.empty:
+        return pd.DataFrame()
 
-    df = pd.read_excel(io.BytesIO(conteudo))
-    # O Power BI lê a mesma planilha: os nomes originais são restaurados em salvar_dados
-    renomeios = {}
-    if 'Iniciativa.1' in df.columns:
-        renomeios['Iniciativa.1'] = 'Nome da Iniciativa'
-    if 'MOTIVO_EXCLUSÃO' in df.columns and 'MOTIVO_EXCLUSAO' not in df.columns:
-        renomeios['MOTIVO_EXCLUSÃO'] = 'MOTIVO_EXCLUSAO'
-    if 'DATA_EXCLUSÃO' in df.columns and 'DATA_EXCLUSAO' not in df.columns:
-        renomeios['DATA_EXCLUSÃO'] = 'DATA_EXCLUSAO'
-    df = df.rename(columns=renomeios)
+    df = projetos.normalizar_nomes_da_original(df.copy())
 
     colunas_controle = [
         'OBSERVAÇÕES/CORREÇÕES', 'AVALIAÇÃO', 'AUDITOR_DPLAN',
@@ -530,15 +527,14 @@ def _preparar_dataframe(conteudo):
     df.loc[df['SEI'].isin(["nan", "None"]), 'SEI'] = ""
     df['SEI_Limpo'] = df['SEI'].str.replace(r'\D', '', regex=True)
     df['Link_SEI'] = "https://sei.mpam.mp.br/sei"
-    return df, renomeios
+    return df
 
-@st.cache_data(ttl=60, show_spinner="Carregando a planilha central...")
+@st.cache_data(ttl=60, show_spinner="Carregando os projetos...")
 def _carregar_dados_cache():
     # Cache compartilhado entre sessões: evita baixar e reprocessar a planilha a cada clique na tela
-    conteudo, etag = obter_armazenamento().ler()
-    df, renomeios = _preparar_dataframe(conteudo)
-    # versao: etag da leitura e cabeçalhos renomeados, para gravar com os nomes originais
-    return df, {"etag": etag, "renomeios": renomeios}
+    abas, etag = dados_internos.garantir_projetos(obter_armazenamento_interno(), obter_armazenamento())
+    # versao: etag da leitura e as abas lidas, para gravar a aba Projetos sem perder as demais
+    return _preparar_dataframe(abas[dados_internos.ABA_PROJETOS]), {"etag": etag, "abas": abas}
 
 def carregar_dados(usar_cache=True):
     """Retorna (DataFrame, versao). Use usar_cache=False antes de operações de gravação."""
@@ -547,19 +543,16 @@ def carregar_dados(usar_cache=True):
     return _carregar_dados_cache()
 
 def salvar_dados(df_para_salvar, versao):
-    """Grava a planilha se ela ainda estiver na versão lida; senão levanta ConflitoDeVersao."""
-    df_limpo = df_para_salvar.drop(columns=['SEI_Limpo', 'Link_SEI'], errors='ignore')
-    df_limpo = df_limpo.rename(columns={novo: original for original, novo in versao["renomeios"].items()})
-    # 'Iniciativa.1' é o nome que o pandas dá à segunda coluna 'Iniciativa' da planilha original
-    df_limpo.columns = ['Iniciativa' if c == 'Iniciativa.1' else c for c in df_limpo.columns]
-    if 'SEI' in df_limpo.columns:
-        # Na planilha original o SEI só com dígitos é número; manter assim para não mudar o tipo lido pelo Power BI
-        df_limpo['SEI'] = df_limpo['SEI'].map(lambda v: int(v) if isinstance(v, str) and v.isdigit() else (v or None)).astype(object)
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df_limpo.to_excel(writer, index=False, sheet_name='Projetos')
+    """Grava os projetos na fonte de dados do SGPP se ela ainda estiver na versão lida; senão levanta ConflitoDeVersao.
+    A planilha original do Power BI nunca é gravada."""
+    interno = obter_armazenamento_interno()
+    if not dados_internos.pode_gravar_projetos(interno, em_sharepoint()):
+        raise ErroArmazenamento("a fonte de dados do SGPP está num arquivo local do servidor, que some quando ele reinicia. "
+                                "Peça à DPLAN para configurar o item_id_interno nos Secrets antes de gravar projetos.")
+    abas = dict(versao["abas"])
+    abas[dados_internos.ABA_PROJETOS] = df_para_salvar.drop(columns=['SEI_Limpo', 'Link_SEI'], errors='ignore')
     try:
-        obter_armazenamento().gravar(buffer.getvalue(), versao["etag"])
+        dados_internos.gravar_internos(interno, abas, versao["etag"])
     finally:
         _carregar_dados_cache.clear()
 
@@ -818,14 +811,15 @@ def rotulo_lateral(texto):
     st.sidebar.markdown(f"<div class='rotulo-lateral'>{texto}</div>", unsafe_allow_html=True)
 
 def tela_planilha_central(armazenamento, modo_sharepoint, df_completo, versao):
-    """Origem, versão e atualização dos dados; troca da base local; estado dos cadastros de usuários."""
+    """A fonte de dados do SGPP, a planilha original do Power BI (só leitura) e a troca da base de projetos."""
     faixa_titulo("Planilha Central", "Origem, versão e atualização dos dados do portfólio", "table_view")
     nivel = st.session_state['nivel']
     gestor_geral = st.session_state['perfil'] == 'Gestor_Geral'
+    interno = obter_armazenamento_interno()
 
     if df_completo.empty:
-        alerta_aviso("A planilha central ainda não foi iniciada ou está vazia."
-                     + (" Use a seção Substituir a base local para carregar uma planilha." if gestor_geral and not modo_sharepoint else ""))
+        alerta_aviso("A fonte de dados do SGPP ainda não tem projetos."
+                     + (" Use a seção Substituir a base de projetos para carregar uma planilha." if gestor_geral else ""))
         ativos = excluidos = arquivados = 0
     else:
         excluidos = int((df_completo['SITUACAO_REGISTRO'] == 'Excluído').sum())
@@ -837,46 +831,48 @@ def tela_planilha_central(armazenamento, modo_sharepoint, df_completo, versao):
     m3.metric("Arquivados", arquivados)
     m4.metric("Excluídos", excluidos)
 
-    st.markdown("## Origem dos dados")
+    st.markdown("## Fonte de dados do SGPP")
     with st.container(border=True):
         texto, acao = st.columns([3, 1], vertical_alignment="center")
-        texto.markdown(f"**{armazenamento.descricao}**")
-        texto.caption("A leitura é renovada sozinha a cada minuto. Cada gravação só vale se ninguém alterou a planilha desde que você a abriu.")
+        texto.markdown(f"**{interno.descricao}**")
+        texto.caption("Os projetos, os rascunhos, as atualizações, os pareceres e o histórico ficam aqui, e só o SGPP grava nesta planilha. "
+                      "A leitura é renovada sozinha a cada minuto, e cada gravação só vale se ninguém alterou a planilha desde que você a abriu.")
         if versao.get("etag"):
             texto.caption(f"Versão lida: {versao['etag'][:24]}")
         if acao.button("Recarregar agora", icon=":material/refresh:", key="recarregar_planilha", use_container_width=True):
             _carregar_dados_cache.clear()
             st.rerun()
+        if isinstance(interno, ArmazenamentoLocal) and modo_sharepoint:
+            alerta_erro("Esta fonte está num arquivo local do servidor e se perde quando ele reinicia. Por isso o SGPP não grava "
+                        "projetos enquanto o item_id_interno não estiver configurado nos Secrets.")
+        if usuarios_na_planilha():
+            texto.caption("Os cadastros de usuários também ficam nela.")
+        else:
+            texto.caption("Os usuários estão definidos no código (usuarios_codigo.py). Para incluir, alterar ou remover alguém, "
+                          "use gerar_usuario.py e edite o arquivo; vale a partir do próximo deploy.")
 
-    if gestor_geral or contas.pode_aprovar(nivel):
-        st.markdown("## Dados internos")
-        with st.container(border=True):
-            interno = obter_armazenamento_interno()
-            st.markdown(f"**{interno.descricao}**")
-            st.caption("Rascunhos, atualizações, pareceres e o histórico dos projetos ficam nesta planilha interna, à parte da planilha de projetos.")
-            if isinstance(interno, ArmazenamentoLocal) and modo_sharepoint:
-                alerta_aviso("Esses dados estão num arquivo local do servidor e se perdem quando ele reinicia. "
-                             "Configure item_id_interno nos Secrets para guardá-los no SharePoint.")
-            if usuarios_na_planilha():
-                st.caption("Os cadastros de usuários também ficam nela.")
-            else:
-                st.caption("Os usuários estão definidos no código (usuarios_codigo.py). Para incluir, alterar ou remover alguém, "
-                           "use gerar_usuario.py e edite o arquivo; vale a partir do próximo deploy.")
+    st.markdown("## Planilha original do Power BI")
+    with st.container(border=True):
+        st.markdown(f"**{armazenamento.descricao}**")
+        st.caption("Para o SGPP esta planilha é somente leitura. Ele a leu uma vez, para copiar os projetos para a fonte de dados própria, "
+                   "e nunca a grava. Para alimentar o Power BI com os dados atuais, gere a exportação na tela Exportar.")
 
-    if gestor_geral and not modo_sharepoint:
-        # Só no modo local: no modo SharePoint o app já lê e grava direto no arquivo
-        st.markdown("## Substituir a base local")
-        alerta_aviso("A planilha enviada substitui toda a base atual. Use só para carregar uma nova versão completa.")
+    if gestor_geral:
+        st.markdown("## Substituir a base de projetos")
+        alerta_aviso("A planilha enviada substitui todos os projetos da fonte de dados do SGPP. Use só para carregar uma nova versão completa. "
+                     "A planilha original do Power BI não é alterada.")
         arquivo = st.file_uploader("Planilha (.xlsx)", type=['xlsx'], key="upload_base")
         confirmou = st.checkbox("Entendo que a base atual será substituída", key="confirma_substituir")
         if st.button("Substituir base", icon=":material/upload:", key="perigo_substituir_base",
                      disabled=arquivo is None or not confirmou):
             try:
-                armazenamento.gravar(arquivo.getvalue(), versao["etag"])
-                _carregar_dados_cache.clear()
+                novos = projetos.normalizar_nomes_da_original(pd.read_excel(arquivo))
+                salvar_dados(novos, versao)
                 st.rerun()
             except ErroArmazenamento as erro:
                 alerta_erro(f"Não foi possível substituir: {erro}")
+            except ValueError as erro:
+                alerta_erro(f"A planilha enviada não pôde ser lida: {erro}")
 
 # ==============================================================================
 # 6. ELABORAÇÃO, ACOMPANHAMENTO E REVISÃO (rascunho, envio, trava, parecer, arquivo)
@@ -893,8 +889,8 @@ def ator_da_sessao():
 
 def aviso_planilha_interna_temporaria(modo_sharepoint):
     if modo_sharepoint and isinstance(obter_armazenamento_interno(), ArmazenamentoLocal):
-        alerta_aviso("Rascunhos, histórico e pareceres estão num arquivo temporário do servidor e se perdem quando ele "
-                     "reinicia. Peça à DPLAN para configurar item_id_interno nos Secrets.")
+        alerta_aviso("A fonte de dados do SGPP está num arquivo temporário do servidor e se perde quando ele reinicia. "
+                     "Enquanto isso, o SGPP não grava projetos. Peça à DPLAN para configurar item_id_interno nos Secrets.")
 
 def ler_abas_ou_erro():
     try:
@@ -1713,11 +1709,11 @@ def dialogo_guia(boas_vindas=False):
 
 def tela_principal():
     armazenamento = obter_armazenamento()
-    modo_sharepoint = isinstance(armazenamento, ArmazenamentoGraph)
+    modo_sharepoint = em_sharepoint()
     try:
         df_completo, versao = carregar_dados()
     except ErroArmazenamento as erro:
-        alerta_erro(f"Não foi possível ler a planilha central ({armazenamento.descricao}): {erro}")
+        alerta_erro(f"Não foi possível ler a fonte de dados do SGPP ({obter_armazenamento_interno().descricao}): {erro}")
         if st.sidebar.button("Tentar novamente", icon=":material/refresh:"):
             _carregar_dados_cache.clear()
             st.rerun()
@@ -1999,9 +1995,24 @@ def tela_principal():
         opcoes_export = ["Portfólio global ativo do MPAM", "Apenas meus projetos ativos"]
         if st.session_state['perfil'] == 'Gestor_Geral':
             opcoes_export.append("Base completa com registros de acompanhamento (incluindo excluídos)")
+            opcoes_export.append("Para o Power BI (formato da planilha original)")
             
         escopo_exp = st.radio("Selecione o conteúdo para download:", opcoes_export, horizontal=True)
         
+        if escopo_exp.startswith("Para o Power BI"):
+            # Exportação à parte: a planilha original do Power BI não é gravada pelo SGPP
+            para_bi = projetos.para_power_bi(df_completo)
+            buffer_bi = io.BytesIO()
+            with pd.ExcelWriter(buffer_bi, engine='openpyxl') as writer:
+                para_bi.to_excel(writer, index=False, sheet_name='Projetos')
+            st.caption(f"{len(para_bi)} projeto(s) ativo(s), só com as colunas da planilha original e na mesma ordem. "
+                       "Projetos excluídos ou arquivados e as colunas do SGPP ficam de fora, e a planilha original não é alterada.")
+            c1, _ = st.columns([1.5, 2.5])
+            c1.download_button("Baixar para o Power BI (.xlsx)", buffer_bi.getvalue(), "PROJETOS - SGPP (formato Power BI).xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:",
+                               type="primary", use_container_width=True)
+            st.stop()
+
         if escopo_exp.startswith("Portfólio"):
             df_exp = df_raw.copy()
         elif escopo_exp.startswith("Apenas"):

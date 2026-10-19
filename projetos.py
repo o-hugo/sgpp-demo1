@@ -2,11 +2,12 @@
 e linha do tempo. Sem dependência do Streamlit, para poder ser testado sozinho.
 
 Onde cada coisa fica:
-  * Planilha de projetos (a que o Power BI lê): o estado do projeto, em colunas acrescentadas no fim
-    (CODIGO, INICIO_PREVISTO, TERMINO_PREVISTO, EDICAO, ENVIADO_POR, ENVIADO_EM, ID_RASCUNHO,
-    PEDIDO_LIBERACAO) e SITUACAO_REGISTRO (Ativo, Arquivado ou Excluído). Cada mudança de estado é uma
-    gravação só, com controle de versão.
-  * Planilha interna (privada): Rascunhos, Atualizacoes, Pareceres e Historico.
+  * Fonte de dados do SGPP (a planilha interna, privada): a aba Projetos, com o estado do projeto nas colunas
+    acrescentadas no fim (CODIGO, INICIO_PREVISTO, TERMINO_PREVISTO, EDICAO, ENVIADO_POR, ENVIADO_EM,
+    ID_RASCUNHO, PEDIDO_LIBERACAO) e SITUACAO_REGISTRO (Ativo, Arquivado ou Excluído), mais Rascunhos,
+    Atualizacoes, Pareceres, Comentarios e Historico. Cada mudança é uma gravação só, com controle de versão.
+  * Planilha original do Power BI: só é lida, uma vez, para copiar os projetos para a fonte do SGPP. Para o
+    Power BI, o SGPP gera uma exportação à parte (para_power_bi), no formato da planilha original.
 
 As funções recebem e devolvem DataFrames e não gravam nada.
 """
@@ -54,6 +55,14 @@ COLUNAS_PARECERES = ["id", "projeto_n", "conclusao", "texto", "autor_login", "au
 COLUNAS_HISTORICO = ["projeto_n", "data_hora", "ator_login", "ator_nome", "evento", "detalhe"]
 COLUNAS_COMENTARIOS = ["id", "projeto_n", "tipo", "texto", "autor_login", "autor_nome", "registrado_em"]
 TIPOS_COMENTARIO = {"comentario": "Comentário", "devolucao": "Devolvido para ajustes", "conclusao": "Revisão concluída"}
+
+# Colunas da planilha original do Power BI, na ordem dela, com o nome que o SGPP usa por dentro. A segunda
+# "Iniciativa" da planilha (o nome do projeto) é "Nome da Iniciativa" no SGPP e volta a ser "Iniciativa" na exportação.
+COLUNAS_POWER_BI = [
+    "Iniciativa", "Nº", "Nome da Iniciativa", "Projeto/Programa/Boa Prática", "Área de Atuação", "Alinhamento Estratégico",
+    "Alinhamento ao PEN", "Ano de criação", "SEI", "Unidade", "Município", "Gestor", "Ementa (Objetivo)", "Status",
+    "Institucionalizado", "Descrição do Projeto", "Link", "Ato PGJ",
+]
 
 ABAS_PROJETOS = {
     "Rascunhos": COLUNAS_RASCUNHOS,
@@ -871,3 +880,32 @@ def resumo_arquivamento(abas, n, df=None):
         "motivo": arquivado["detalhe"] if arquivado else "",
         "dias": dias,
     }
+
+
+# ------------------------------------------------------------------ planilha original do Power BI
+
+def normalizar_nomes_da_original(df):
+    """Nomes de coluna do SGPP para uma planilha lida da original: o pandas chama de "Iniciativa.1" a segunda
+    "Iniciativa", e os acentos de MOTIVO_EXCLUSÃO e DATA_EXCLUSÃO saem."""
+    renomeios = {}
+    if "Iniciativa.1" in df.columns:
+        renomeios["Iniciativa.1"] = "Nome da Iniciativa"
+    if "MOTIVO_EXCLUSÃO" in df.columns and "MOTIVO_EXCLUSAO" not in df.columns:
+        renomeios["MOTIVO_EXCLUSÃO"] = "MOTIVO_EXCLUSAO"
+    if "DATA_EXCLUSÃO" in df.columns and "DATA_EXCLUSAO" not in df.columns:
+        renomeios["DATA_EXCLUSÃO"] = "DATA_EXCLUSAO"
+    return df.rename(columns=renomeios)
+
+
+def para_power_bi(df):
+    """Os projetos ativos no formato da planilha original do Power BI: só as colunas dela, na ordem dela e com o
+    mesmo cabeçalho (inclusive a coluna "Iniciativa" repetida). Nenhuma coluna do SGPP vai junto, e projetos
+    excluídos ou arquivados ficam de fora, para o relatório não precisar filtrar nada."""
+    ativos = df[df["SITUACAO_REGISTRO"].map(texto) == SITUACAO_ATIVO] if "SITUACAO_REGISTRO" in df.columns else df
+    colunas = [c for c in COLUNAS_POWER_BI if c in ativos.columns]
+    saida = ativos[colunas].copy()
+    if "SEI" in saida.columns:
+        # Na planilha original o SEI só com dígitos é número; manter assim para não mudar o tipo que o Power BI lê
+        saida["SEI"] = saida["SEI"].map(lambda v: int(v) if isinstance(v, str) and v.isdigit() else (v or None)).astype(object)
+    saida.columns = ["Iniciativa" if c == "Nome da Iniciativa" else c for c in colunas]
+    return saida.reset_index(drop=True)

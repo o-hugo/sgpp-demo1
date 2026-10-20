@@ -10,9 +10,11 @@ import math
 import os
 import re
 import secrets
+import zlib
 
 import contas
 import dados_internos
+import documentos_sei
 import guia
 import projetos
 import usuarios_codigo
@@ -799,6 +801,7 @@ PAGINAS = {
     "meus": ":material/folder_open: Meus Projetos",
     "elaboracao": ":material/edit_note: Elaboração",
     "acompanhamento": ":material/timeline: Acompanhamento",
+    "documentos": ":material/description: Documentos SEI",
     "planilha": ":material/table_view: Planilha Central",
     "exportar": ":material/download: Exportar",
     "pendencias": ":material/checklist: Pendências",
@@ -1068,6 +1071,16 @@ def tela_elaboracao(df_completo, modo_sharepoint):
                     st.session_state['aviso_elaboracao'] = "Rascunho descartado."
                     st.rerun()
 
+    if atual:
+        with st.expander("Escopo do projeto para o SEI", icon=":material/description:"):
+            st.caption("O Escopo (as 17 partes do Ato nº 269/2026/PGJ) montado com o que está salvo neste rascunho. Salve o rascunho antes para atualizar. As partes sem campo aqui saem marcadas com (a preencher: ...).")
+            projeto_rascunho = documentos_sei.projeto_do_rascunho(atual, st.session_state['nome'])
+            doc_escopo = documentos_sei.montar("escopo_projeto", projeto_rascunho, abas, campos={"assinante_nome": st.session_state['nome']})
+            st.code(documentos_sei.para_texto(doc_escopo), language=None, wrap_lines=True)
+            st.download_button("Baixar o Escopo em PDF", data=documentos_sei.para_pdf(doc_escopo, "minuta"), icon=":material/download:",
+                               file_name=documentos_sei.nome_do_arquivo(doc_escopo, projeto_rascunho, "pdf"), mime="application/pdf",
+                               key=f"escopo_pdf_{k}", on_click="ignore")
+
     enviados = abas["Rascunhos"]
     enviados = enviados[(enviados["autor_login"] == login) & (enviados["situacao"] == "enviado")].iloc[::-1].head(8)
     if not enviados.empty:
@@ -1105,6 +1118,8 @@ def salvar_edicoes_gestor(df_completo, versao, df_origem, df_editado):
     st.session_state['aviso_meus'] = (f"Alterações gravadas em {len(alterados)} projeto(s)."
                                       + (" Os projetos liberados voltaram a ficar travados." if travados else "")
                                       + (" Os ajustes foram reenviados à Planejamento para nova revisão." if reenviados else ""))
+    if reenviados:
+        st.session_state['docs_depois'] = (reenviados[0], "memorando_reenvio")
     st.rerun()
 
 def pedir_liberacao(numero, motivo):
@@ -1166,6 +1181,7 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
     mensagem = st.session_state.pop('aviso_acompanhamento', None)
     if mensagem:
         alerta_ok(mensagem)
+    botao_documento_depois()
     if visiveis.empty:
         alerta_info("Não há projetos para acompanhar.")
         return
@@ -1213,6 +1229,7 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
                         alerta_erro(erro)
                     else:
                         st.session_state['aviso_acompanhamento'] = "Atualização registrada."
+                        st.session_state['docs_depois'] = (escolhido, "certidao_atividade")
                         st.rerun()
         elif arquivado:
             alerta_info("Projeto arquivado: não recebe novas atualizações.")
@@ -1249,6 +1266,145 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
 
     with aba_tempo:
         st.markdown(html_linha_do_tempo(projetos.linha_do_tempo(abas, escolhido), projeto.get('Ano de criação')), unsafe_allow_html=True)
+
+# ------------------------------------------------------------------ documentos para o SEI
+
+LADOS_DOCUMENTO = {"dplan": "DPLAN", "projeto": "Unidade do projeto"}
+
+def pedir_documentos(numero, tipo=None):
+    """Vai para Documentos SEI já com o projeto (e o documento) escolhidos. Serve de on_click: o menu aplica no começo da execução."""
+    st.session_state['navegar_docs'] = (str(numero), tipo)
+
+def botao_documento_depois():
+    """Depois de uma ação que costuma pedir um documento no SEI, oferece o atalho. Aparece uma vez, como os avisos."""
+    depois = st.session_state.pop('docs_depois', None)
+    if not depois:
+        return
+    numero, tipo = depois
+    if tipo in documentos_sei.tipos_para(st.session_state['nivel']):
+        st.button(f"Preparar: {documentos_sei.TIPOS_DOCUMENTO[tipo]['titulo']}", icon=":material/description:",
+                  key=f"docs_depois_{tipo}", on_click=pedir_documentos, args=(numero, tipo))
+
+def registrar_geracao_documento(numero, titulo, formato):
+    """Roda ao baixar: deixa na linha do tempo quem gerou o documento, sem guardar o texto."""
+    login, nome = ator_da_sessao()
+    registrar_historico([projetos.evento(numero, login, nome, "documento_gerado", f"{titulo} ({formato})")])
+
+def altura_da_caixa(texto):
+    return max(68, min(400, 26 * (len(texto) // 85 + texto.count("\n") + 2)))
+
+def tela_documentos_sei(df_completo, modo_sharepoint):
+    faixa_titulo("Documentos SEI", "Textos e PDFs prontos para agregar ao processo no SEI", "description")
+    nivel = st.session_state['nivel']
+    login, nome = ator_da_sessao()
+    tipos = documentos_sei.tipos_para(nivel)
+    ativos = df_completo[df_completo['SITUACAO_REGISTRO'] == projetos.SITUACAO_ATIVO]
+    base = ativos if projetos.pode("documentos_dplan", nivel) else ativos[ativos['Gestor'].astype(str).str.lower() == nome.lower()]
+    if base.empty:
+        alerta_info("Não há projetos ativos sob a sua responsabilidade para gerar documentos.")
+        return
+    aviso_planilha_interna_temporaria(modo_sharepoint)
+    abas = ler_abas_ou_erro()
+    if abas is None:
+        return
+
+    por_n = {projetos.chave(r): r for _, r in base.iterrows()}
+    ids = list(por_n)
+    if st.session_state.get('docs_projeto') not in ids:
+        st.session_state.pop('docs_projeto', None)
+    escolhido = st.selectbox("Projeto", ids, format_func=lambda n: rotulo_projeto(por_n[n]), key="docs_projeto")
+    projeto = por_n[escolhido]
+    st.markdown(html_ficha_cabecalho(projeto), unsafe_allow_html=True)
+
+    sugerido = documentos_sei.sugerido(projeto, nivel)
+    if st.session_state.get('docs_tipo') not in tipos:
+        st.session_state['docs_tipo'] = sugerido
+    dois_lados = len({documentos_sei.TIPOS_DOCUMENTO[t]['lado'] for t in tipos}) > 1
+
+    def rotulo_tipo(t):
+        modelo_t = documentos_sei.TIPOS_DOCUMENTO[t]
+        return f"{LADOS_DOCUMENTO[modelo_t['lado']]}: {modelo_t['titulo']}" if dois_lados else modelo_t['titulo']
+
+    tipo = st.selectbox("Documento", tipos, format_func=rotulo_tipo, key="docs_tipo")
+    modelo = documentos_sei.TIPOS_DOCUMENTO[tipo]
+    if sugerido and sugerido != tipo:
+        st.caption(f"Sugerido para este projeto agora: {documentos_sei.TIPOS_DOCUMENTO[sugerido]['titulo']}.")
+    st.caption(f"Quando usar: {modelo['momento']}")
+    if modelo.get('aviso'):
+        alerta_aviso(modelo['aviso'])
+
+    padrao_inicial = documentos_sei.campos_padrao(tipo, projeto, abas, nome)
+    escolhidos = {}
+    for campo in modelo['campos']:
+        if campo['tipo'] == 'escolha':
+            inicial = padrao_inicial.get(campo['chave'])
+            escolhidos[campo['chave']] = st.radio(campo['rotulo'], campo['opcoes'], horizontal=True,
+                                                  index=campo['opcoes'].index(inicial) if inicial in campo['opcoes'] else 0,
+                                                  key=f"docs_{escolhido}_{tipo}_{campo['chave']}")
+    padrao = documentos_sei.campos_padrao(tipo, projeto, abas, nome, escolhidos=escolhidos)
+    chave_base = f"docs_{escolhido}_{tipo}_" + "_".join(escolhidos.values())
+    valores = dict(escolhidos)
+    with st.expander("Dados do documento", icon=":material/tune:", expanded=True):
+        for campo in modelo['campos']:
+            if campo['tipo'] == 'escolha':
+                continue
+            chave_campo = f"{chave_base}_{campo['chave']}"
+            if campo['tipo'] == 'atualizacao':
+                opcoes = documentos_sei.opcoes_atualizacoes(abas, escolhido)
+                if opcoes:
+                    valores[campo['chave']] = st.selectbox(campo['rotulo'], list(opcoes), format_func=opcoes.get, key=chave_campo)
+                else:
+                    st.caption("Nenhuma atividade registrada no Acompanhamento. A Certidão usa a data de hoje; descreva a atividade na caixa de texto abaixo.")
+            elif campo['tipo'] == 'data':
+                dia = st.date_input(campo['rotulo'], value=projetos.parse_data(padrao[campo['chave']]), format="DD/MM/YYYY", key=chave_campo)
+                valores[campo['chave']] = dia.isoformat() if dia else ""
+            else:
+                valores[campo['chave']] = st.text_input(campo['rotulo'], value=padrao[campo['chave']], help=campo['ajuda'] or None, key=chave_campo)
+
+    doc = documentos_sei.montar(tipo, projeto, abas, campos=valores)
+    digest = format(zlib.crc32(repr(sorted(valores.items())).encode("utf-8")), "08x")  # refaz as caixas quando os dados mudam
+    aba_editar, aba_texto, aba_pdf = st.tabs([":material/edit: Editar o texto", ":material/content_copy: Copiar para o SEI", ":material/picture_as_pdf: PDF"])
+
+    with aba_editar:
+        st.caption("O texto vem dos dados do projeto. Ajuste o que precisar. Se mudar os dados acima, o texto é refeito a partir deles.")
+        if doc.assunto:
+            doc.assunto = st.text_input("Assunto", value=doc.assunto, key=f"{chave_base}_{digest}_assunto")
+        novos = []
+        for i, bloco in enumerate(doc.blocos):
+            rotulo = (bloco[1] if bloco[0] == "campo" else "Lista (um item por linha)" if bloco[0] == "lista"
+                      else "Título" if bloco[0] == "titulo" else f"Parágrafo {i + 1}")
+            inicial = documentos_sei.bloco_para_texto(bloco)
+            editado = st.text_area(rotulo, value=inicial, height=altura_da_caixa(inicial), key=f"{chave_base}_{digest}_b{i}")
+            novos.append(documentos_sei.texto_para_bloco(bloco, editado))
+        doc.blocos = novos
+
+    texto_sei = documentos_sei.para_texto(doc)
+    alertas = documentos_sei.alertas_dados_pessoais(texto_sei)
+    if alertas:
+        alerta_aviso(f"O texto parece conter {', '.join(alertas)}. Retire esses dados antes de usar o documento: o SGPP acompanha projetos, não pessoas.")
+    faltam = documentos_sei.trechos_a_preencher(doc)
+    if faltam:
+        alerta_info(f"{faltam} trecho(s) ainda marcado(s) com (a preencher: ...). Escreva cada um em Editar o texto antes de usar o documento.")
+
+    with aba_texto:
+        st.caption(f"No SEI: Incluir Documento, tipo {modelo['tipo_sei']}. Cole o texto no editor. Número, assinatura e código verificador "
+                   "o próprio SEI põe. Use o ícone de copiar no canto da caixa.")
+        st.code(texto_sei, language=None, wrap_lines=True)
+        st.download_button("Baixar em HTML", data=documentos_sei.para_html(doc).encode("utf-8"), icon=":material/code:",
+                           file_name=documentos_sei.nome_do_arquivo(doc, projeto, "html"), mime="text/html", key=f"docs_html_{escolhido}_{tipo}",
+                           on_click=registrar_geracao_documento, args=(escolhido, modelo['titulo'], "HTML"),
+                           help="Para colar no editor do SEI ou numa extensão que insere HTML.")
+
+    with aba_pdf:
+        modos = {"minuta": "Minuta de conferência (sem número nem assinatura)",
+                 "externo": "Documento externo (com local, data e linha de assinatura)"}
+        modo = st.radio("Tipo de PDF", list(modos), format_func=modos.get, key="docs_modo")
+        st.caption("Documento criado no SEI recebe número e assinatura do próprio SEI. O PDF serve para conferir o texto ou, no modo externo, "
+                   "para incluir como documento externo. Confirme no SEI do MPAM como ele trata um PDF externo antes de adotar esse modo.")
+        st.download_button("Baixar PDF", data=documentos_sei.para_pdf(doc, modo), icon=":material/download:", type="primary",
+                           file_name=documentos_sei.nome_do_arquivo(doc, projeto, "pdf"), mime="application/pdf",
+                           key=f"docs_pdf_{escolhido}_{tipo}", on_click=registrar_geracao_documento,
+                           args=(escolhido, modelo['titulo'], "PDF"))
 
 # ------------------------------------------------------------------ revisão (Planejamento)
 
@@ -1396,6 +1552,10 @@ def acao_revisao(numero, acao, comentario):
     registrar_historico([projetos.evento(numero, login, nome, tipo_evento, detalhe)], [(numero, tipo, comentario)])
     st.session_state['aviso_revisao'] = {"concluir": "Revisão concluída.", "devolver": "Projeto devolvido ao gestor para ajustes.",
                                          "comentar": "Comentário enviado."}[acao]
+    if acao == "devolver":
+        st.session_state['docs_depois'] = (numero, "memorando_devolucao")
+    elif acao == "concluir":
+        st.session_state['docs_depois'] = (numero, "parecer_tecnico")
     st.rerun()
 
 def mudar_arquivamento(numero, arquivar, motivo=""):
@@ -1432,6 +1592,7 @@ def tela_revisao(df_completo, modo_sharepoint):
     mensagem = st.session_state.pop('aviso_revisao', None)
     if mensagem:
         alerta_ok(mensagem)
+    botao_documento_depois()
     aviso_planilha_interna_temporaria(modo_sharepoint)
     abas = ler_abas_ou_erro()
     if abas is None:
@@ -1752,9 +1913,14 @@ def dialogo_ficha(id_projeto):
                 st.markdown(html_linha_do_tempo(projetos.linha_do_tempo(abas, n), projeto.get('Ano de criação')), unsafe_allow_html=True)
 
     st.divider()
-    if st.button("Abrir no Acompanhamento", icon=":material/open_in_new:", type="primary", key=f"ficha_abrir_{n}",
-                 help="Para registrar atualização, comentar ou emitir parecer"):
+    pode_documentos = bool(documentos_sei.tipos_para(nivel)) and (projetos.pode("documentos_dplan", nivel) or dono)
+    botoes = st.columns([1, 1, 1.4] if pode_documentos else [1, 2])
+    if botoes[0].button("Abrir no Acompanhamento", icon=":material/open_in_new:", type="primary", key=f"ficha_abrir_{n}",
+                        help="Para registrar atualização, comentar ou emitir parecer"):
         ir_para_acompanhamento(n)
+    if pode_documentos:
+        botoes[1].button("Documentos SEI", icon=":material/description:", key=f"ficha_docs_{n}", on_click=pedir_documentos, args=(n,),
+                         help="Memorandos, Certidões e outros documentos prontos para o SEI")
 
 @st.dialog("Guia do SGPP", width="large")
 def dialogo_guia(boas_vindas=False):
@@ -1816,6 +1982,8 @@ def tela_principal():
         if nivel_atual != "leitor":
             opcoes_menu += [PAGINAS["meus"], PAGINAS["elaboracao"]]
         opcoes_menu.append(PAGINAS["acompanhamento"])
+        if documentos_sei.tipos_para(nivel_atual):
+            opcoes_menu.append(PAGINAS["documentos"])
     opcoes_menu.append(PAGINAS["planilha"])
     if not base_vazia:
         opcoes_menu.append(PAGINAS["exportar"])
@@ -1834,6 +2002,12 @@ def tela_principal():
         st.session_state['menu_principal'] = PAGINAS["acompanhamento"]
         st.session_state['acomp_escopo'] = "Todo o portfólio"
         st.session_state['acomp_projeto'] = destino
+    destino_docs = st.session_state.pop('navegar_docs', None)
+    if destino_docs and PAGINAS["documentos"] in opcoes_menu:
+        st.session_state['menu_principal'] = PAGINAS["documentos"]
+        st.session_state['docs_projeto'] = destino_docs[0]
+        if destino_docs[1] in documentos_sei.tipos_para(nivel_atual):
+            st.session_state['docs_tipo'] = destino_docs[1]
     rotulo_lateral("Navegação")
     menu = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed", key="menu_principal")
 
@@ -1889,6 +2063,9 @@ def tela_principal():
 
     elif menu == PAGINAS["acompanhamento"]:
         tela_acompanhamento(df_completo, modo_sharepoint)
+
+    elif menu == PAGINAS["documentos"]:
+        tela_documentos_sei(df_completo, modo_sharepoint)
 
     elif menu == PAGINAS["revisao"]:
         tela_revisao(df_completo, modo_sharepoint)
@@ -1984,6 +2161,7 @@ def tela_principal():
         mensagem_meus = st.session_state.pop('aviso_meus', None)
         if mensagem_meus:
             alerta_ok(mensagem_meus)
+        botao_documento_depois()
 
         if df_meus.empty:
             alerta_info(f"Não há iniciativas ativas registradas sob responsabilidade de '{st.session_state['nome']}'.")

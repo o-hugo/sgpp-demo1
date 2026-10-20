@@ -90,6 +90,7 @@ EVENTOS = {
     "reativado": "Reativado",
     "excluido": "Excluído",
     "restaurado": "Restaurado",
+    "documento_gerado": "Documento para o SEI gerado",
 }
 
 # Quem pode o quê (níveis de contas.py). O comitê, por ora, só aprova usuários.
@@ -101,6 +102,8 @@ _PERMISSOES = {
     "arquivar": {"administrador", "planejamento"},
     "revisar": {"administrador", "planejamento"},
     "ver_pendencias": {"administrador", "planejamento", "comite"},
+    "documentos_dplan": {"administrador", "planejamento"},
+    "documentos_projeto": {"administrador", "planejamento", "comite", "gestor_unidade", "gestor_projeto"},
 }
 
 

@@ -149,6 +149,20 @@ SECOES = [
         ],
     },
     {
+        "id": "documentos_sei", "titulo": "Documentos para o SEI", "icone": ":material/description:",
+        "resumo": "Escopo, Memorandos, Certidões, Parecer e Relatório prontos para colar no SEI ou baixar em PDF.",
+        "niveis": _AUTORES,
+        "passos": [
+            "Abra **Documentos SEI**, escolha o projeto e o documento. O SGPP sugere o mais provável pela situação do projeto e já preenche o texto com os dados dele.",
+            "Para quem executa o projeto: o **Escopo do projeto**, com as 17 partes do Ato PGJ, que também aparece em **Elaboração** para o rascunho salvo; o **Memorando de resposta e reenvio**, depois de ajustar um projeto devolvido; a **Certidão de atividade**, para cada atividade registrada em **Acompanhamento**; e o **Relatório de atuação**, no fim de um período.",
+            "Para a Planejamento: o **Memorando de devolução para ajustes**, o **Parecer Técnico**, o **Memorando de encaminhamento do Parecer ao Comitê** e a **Certidão de inclusão no Portfólio**. Depois de **Devolver para ajustes** (o memorando) ou de **Concluir revisão** (o parecer), a tela de **Revisão** oferece o atalho.",
+            "Em **Editar o texto**, ajuste o que precisar. Os trechos marcados com (a preencher: ...) pedem a sua análise. Se mudar os dados do documento, o texto é refeito a partir deles.",
+            "Em **Copiar para o SEI**, copie o texto, crie o documento no SEI (Incluir Documento) e cole no editor. Número, assinatura e código verificador o próprio SEI põe, por isso o texto não os traz.",
+            "Em **PDF**, baixe a minuta de conferência ou o documento externo, com linha de assinatura. Confirme no SEI do MPAM como ele trata um PDF incluído como documento externo.",
+            "Nunca digite nome, CPF, número de processo ou outros dados pessoais de participantes na Certidão de atividade. O SGPP acompanha projetos, não pessoas.",
+        ],
+    },
+    {
         "id": "portfolio", "titulo": "Portfólio e planilha", "icone": ":material/dashboard:",
         "resumo": "Dashboard, quadro, planilha central e exportação.",
         "niveis": None,

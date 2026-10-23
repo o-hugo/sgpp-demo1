@@ -13,6 +13,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 
 import guia
 import projetos
@@ -115,9 +116,10 @@ TIPOS_DOCUMENTO = {
     "escopo_projeto": {
         "titulo": "Escopo do projeto", "tipo_sei": "Projeto", "lado": "projeto", "arquivo": "Projeto_escopo",
         "momento": "Durante a Elaboração, antes de enviar, e a cada nova versão do projeto.",
-        "aviso": f"O Escopo segue as 17 partes do Modelo de Escopo de Projeto (Ato nº 269/2026/PGJ). O formulário de Elaboração ainda "
-                 f"cobre só as partes {_PARTES_COM_CAMPO}; as demais saem marcadas com (a preencher: ...). A orientação de cada parte está "
-                 "no Guia, em Escopo do projeto (Ato PGJ).",
+        "aviso": f"O Escopo segue as 17 partes do Modelo de Escopo de Projeto (Ato nº 269/2026/PGJ). O formulário de Elaboração e a "
+                 f"seção Escopo do projeto, em Meus Projetos, preenchem as partes {_PARTES_COM_CAMPO}. O que ainda não foi escrito, e as "
+                 "tabelas de indicadores, recursos, riscos e cronograma, saem marcados com (a preencher: ...). A orientação de cada parte "
+                 "está no Guia, em Escopo do projeto (Ato PGJ).",
         "campos": list(_ASSINANTE),
     },
     "relatorio_atuacao": {
@@ -585,44 +587,106 @@ def _campo_ou_pendente(rotulo, valor, orientacao):
     return ("campo", rotulo, valor or _a_preencher(orientacao))
 
 
-def _escopo_i(p):
-    return [_campo_ou_pendente("Título do projeto", _t(p.get("Nome da Iniciativa")), "informe o nome do projeto"),
-            _campo_ou_pendente("Unidade demandante", _t(p.get("Unidade")), "informe a unidade"),
-            _campo_ou_pendente("Gerente ou coordenador", _t(p.get("Gestor")), "informe nome e cargo"),
-            ("paragrafo", _a_preencher("sigla do projeto, e-mail e telefone do gerente, equipe do projeto e patrocinador"))]
+def _blocos_de_texto(valor, orientacao, lista=False):
+    """O texto de um campo do Escopo como blocos: um parágrafo por linha ou, nos campos de 'um por linha', uma lista."""
+    linhas = [re.sub(r"^[-*•]\s*", "", linha.strip()) for linha in _t(valor).splitlines() if linha.strip()]
+    if not linhas:
+        return [("paragrafo", _a_preencher(orientacao))]
+    if lista and len(linhas) > 1:
+        return [("lista", linhas)]
+    return [("paragrafo", linha) for linha in linhas]
 
 
-def _escopo_ii(p):
+def _escopo_i(p, e):
+    equipe = _blocos_de_texto(e["esc_equipe"], "liste a equipe do projeto e indique o gerente substituto", lista=True)
+    return ([_campo_ou_pendente("Título do projeto", _t(p.get("Nome da Iniciativa")), "informe o nome do projeto"),
+             _campo_ou_pendente("Sigla (nome reduzido)", e["esc_sigla"], "informe a sigla do projeto"),
+             _campo_ou_pendente("Unidade demandante", _t(p.get("Unidade")), "informe a unidade"),
+             _campo_ou_pendente("Gerente ou coordenador", _t(p.get("Gestor")), "informe nome e cargo"),
+             _campo_ou_pendente("E-mail e telefone do gerente", e["esc_contato_gerente"], "informe o contato do gerente"),
+             _campo_ou_pendente("Patrocinador", e["esc_patrocinador"], "informe o patrocinador"),
+             ("paragrafo", "Equipe do projeto:")] + equipe)
+
+
+def _escopo_ii(p, e):
     return [("paragrafo", _t(p.get("Ementa (Objetivo)")) or _a_preencher("descreva a iniciativa de forma sucinta"))]
 
 
-def _escopo_viii(p):
-    dados = [("campo", rotulo, valor) for rotulo, valor in (("Alinhamento estratégico", _t(p.get("Alinhamento Estratégico"))),
-                                                           ("Alinhamento ao PEN", _t(p.get("Alinhamento ao PEN")))) if valor]
-    return dados + [("paragrafo", _a_preencher("indique o objetivo, o programa e a ação estratégicos e os ODS"))]
+def _escopo_iii(p, e):
+    return _blocos_de_texto(e["esc_justificativas"], "descreva o problema ou a oportunidade que justifica o projeto")
 
 
-def _escopo_xii(p):
+def _escopo_iv(p, e):
+    return ([_campo_ou_pendente("Objetivo geral", e["esc_objetivo_geral"], "informe o objetivo geral"),
+             ("paragrafo", "Objetivos específicos:")]
+            + _blocos_de_texto(e["esc_objetivos_especificos"], "liste os objetivos específicos", lista=True))
+
+
+def _escopo_v(p, e):
+    return _blocos_de_texto(e["esc_unidades_envolvidas"], "liste as unidades e os órgãos envolvidos, dentro e fora do MPAM", lista=True)
+
+
+def _escopo_vi(p, e):
+    return _blocos_de_texto(e["esc_publico_alvo"], "descreva o público alvo")
+
+
+def _escopo_vii(p, e):
+    return _blocos_de_texto(e["esc_tipo_iniciativa"], "informe se o projeto é original ou vinculado a outros projetos")
+
+
+def _escopo_viii(p, e):
+    return [_campo_ou_pendente("Alinhamento estratégico", _t(p.get("Alinhamento Estratégico")), "indique o objetivo, o programa e a ação estratégicos"),
+            _campo_ou_pendente("Alinhamento ao PEN", _t(p.get("Alinhamento ao PEN")), "indique o alinhamento ao PEN"),
+            _campo_ou_pendente("ODS", e["esc_ods"], "indique os ODS")]
+
+
+def _escopo_ix(p, e):
+    return _blocos_de_texto(e["esc_valores"], "justifique em relação aos valores institucionais")
+
+
+def _escopo_x(p, e):
+    return _blocos_de_texto(e["esc_ti"], "detalhe os recursos tecnológicos, se aplicável")
+
+
+def _escopo_xi(p, e):
+    return _blocos_de_texto(e["esc_lgpd"], "informe a LGPD e as políticas de segurança da informação, no que for aplicável")
+
+
+def _escopo_xii(p, e):
     return [_campo_ou_pendente("Início previsto", _data_br(p.get("INICIO_PREVISTO")), "informe o mês e o ano de início"),
             _campo_ou_pendente("Término previsto", _data_br(p.get("TERMINO_PREVISTO")), "informe o mês e o ano de término"),
+            _campo_ou_pendente("Duração prevista", e["esc_duracao"], "informe a duração em meses"),
             _campo_ou_pendente("Fase atual do projeto", _t(p.get("Status")), "informe a fase atual"),
-            ("paragrafo", _a_preencher("informe a duração em meses e a estimativa de custo em reais"))]
+            _campo_ou_pendente("Estimativa de custo", e["esc_custo"], "informe a estimativa de custo em reais")]
 
 
-def _escopo_sem_campo(p):
+def _escopo_xiii(p, e):
+    return _blocos_de_texto(e["esc_etapas"], "detalhe as etapas e as principais fases do trabalho")
+
+
+def _escopo_sem_campo(p, e):
     return [("paragrafo", _a_preencher("esta parte ainda não tem campo no SGPP; escreva aqui"))]
 
 
-# As partes do Escopo que o formulário de Elaboração já cobre. Quando uma parte ganhar campo no formulário, entra aqui.
-PARTES_PREENCHIDAS = {"I": _escopo_i, "II": _escopo_ii, "VIII": _escopo_viii, "XII": _escopo_xii}
+# As partes do Escopo que o formulário de Elaboração já cobre (as tabelas, XIV a XVII, ainda não). Quando uma parte ganhar
+# campo no formulário, entra aqui; um teste acusa se o guia marcar uma parte como coberta e ela não estiver aqui.
+PARTES_PREENCHIDAS = {"I": _escopo_i, "II": _escopo_ii, "III": _escopo_iii, "IV": _escopo_iv, "V": _escopo_v, "VI": _escopo_vi,
+                      "VII": _escopo_vii, "VIII": _escopo_viii, "IX": _escopo_ix, "X": _escopo_x, "XI": _escopo_xi,
+                      "XII": _escopo_xii, "XIII": _escopo_xiii}
+
+
+def _escopo_dados(p, abas):
+    """Os textos do Escopo: os do rascunho (quando o projeto veio de um) ou os da aba Escopo do projeto enviado."""
+    do_rascunho = p.get("ESCOPO")
+    return do_rascunho if isinstance(do_rascunho, dict) else projetos.escopo_do_projeto(abas, projetos.chave(p))
 
 
 def _montar_escopo_projeto(p, abas, c, hoje):
-    nome = _nome(p)
+    nome, e = _nome(p), _escopo_dados(p, abas)
     blocos = [("titulo", "ESCOPO DE PROJETO"), ("titulo", f"PROJETO {nome.upper()}")]
     for parte in guia.ESCOPO_ATO_PGJ:
         blocos.append(("titulo", f"{parte['numero']}. {parte['titulo']}"))
-        blocos += PARTES_PREENCHIDAS.get(parte["numero"], _escopo_sem_campo)(p)
+        blocos += PARTES_PREENCHIDAS.get(parte["numero"], _escopo_sem_campo)(p, e)
     return Documento(
         tipo="escopo_projeto", tipo_sei="Projeto", titulo=TIPOS_DOCUMENTO["escopo_projeto"]["titulo"],
         blocos=blocos, assinante=_assinante(c), assinatura_no_corpo=False, data=hoje)
@@ -634,7 +698,7 @@ def projeto_do_rascunho(rascunho, gestor):
             "Ementa (Objetivo)": rascunho.get("ementa"), "Alinhamento Estratégico": rascunho.get("alinhamento_est"),
             "Alinhamento ao PEN": rascunho.get("alinhamento_pen"), "INICIO_PREVISTO": rascunho.get("inicio_previsto"),
             "TERMINO_PREVISTO": rascunho.get("termino_previsto"), "Status": rascunho.get("status"), "SEI": rascunho.get("sei"),
-            "ID_PROJETO": "rascunho"}
+            "ID_PROJETO": "rascunho", "ESCOPO": projetos.escopo_do_rascunho(rascunho)}
 
 
 _MONTADORES = {
@@ -777,6 +841,95 @@ def para_latin1(texto):
     return texto.encode("latin-1", "replace").decode("latin-1")
 
 
+def _fatiar(texto, limite=1300):
+    """Quebra um texto longo em pedaços de até `limite` caracteres, em fim de linha ou de frase, para a linha da tabela
+    nunca ficar maior que uma página. Texto curto volta inteiro."""
+    if len(texto) <= limite:
+        return [texto]
+    unidades = []  # (texto, separador que o antecede)
+    for linha in texto.split("\n"):
+        frases = [linha] if len(linha) <= limite else re.split(r"(?<=[.;!?]) ", linha)
+        for i, frase in enumerate(frases):
+            separador = "\n" if i == 0 else " "
+            while len(frase) > limite:
+                corte = frase.rfind(" ", 0, limite)
+                corte = corte if corte > 0 else limite
+                unidades.append((frase[:corte], separador))
+                frase, separador = frase[corte:].lstrip(), " "
+            unidades.append((frase, separador))
+    pedacos, atual = [], ""
+    for frase, separador in unidades:
+        if atual and len(atual) + len(frase) + 1 > limite:
+            pedacos.append(atual)
+            atual = ""
+        atual = f"{atual}{separador}{frase}" if atual else frase
+    if atual:
+        pedacos.append(atual)
+    return pedacos
+
+
+def _escopo_em_tabelas(pdf, doc):
+    """O Escopo no layout do modelo da DPLAN: cabeçalho institucional, "PROPOSTA DE PROJETO" e cada parte com uma barra
+    cinza (I - Identificação do Projeto) seguida de uma tabela, com os campos em duas colunas e os textos em largura total."""
+    from fpdf.fonts import FontFace
+
+    partes, unidade = [], ""
+    for bloco in doc.blocos:
+        if bloco[0] == "titulo" and re.match(r"^[IVX]+\. ", bloco[1]):
+            partes.append((bloco[1].replace(". ", " - ", 1), []))
+        elif partes:
+            partes[-1][1].append(bloco)
+            if bloco[0] == "campo" and bloco[1] == "Unidade demandante" and not _PADRAO_A_PREENCHER.search(bloco[2]):
+                unidade = bloco[2]
+
+    def centro(texto, estilo="", tamanho=12, altura=5.5):
+        pdf.set_font("Times", estilo, tamanho)
+        pdf.cell(0, altura, para_latin1(texto), align="C", new_x="LMARGIN", new_y="NEXT")
+
+    brasao = Path(__file__).resolve().parent / "assets" / "brasao-mpam.png"
+    if brasao.exists():
+        topo = pdf.get_y()
+        pdf.image(str(brasao), x=(pdf.w - 20) / 2, y=topo, w=20)
+        pdf.set_y(topo + 22)
+    centro("Ministério Público do Estado do Amazonas", "B")
+    centro("Procuradoria-Geral de Justiça")
+    centro("Diretoria de Planejamento - DPLAN")
+    if unidade:
+        centro(unidade)
+    pdf.ln(3)
+    centro("PROPOSTA DE PROJETO", "B", 13, 7)
+    pdf.ln(3)
+
+    largura = pdf.w - pdf.l_margin - pdf.r_margin
+    for titulo, blocos in partes:
+        if pdf.get_y() > pdf.h - 60:  # a barra não fica sozinha no pé da página
+            pdf.add_page()
+        pdf.set_font("Times", "B", 11)
+        pdf.set_fill_color(200, 200, 200)
+        pdf.cell(largura, 7, para_latin1(titulo), border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_fill_color(255, 255, 255)  # as células da tabela, se pintarem, pintam de branco
+        linhas = []
+        for bloco in blocos:
+            if bloco[0] == "campo":
+                pedacos = _fatiar(bloco[2])
+                linhas.append(("campo", bloco[1], pedacos[0]))
+                linhas += [("texto", p) for p in pedacos[1:]]
+            else:
+                texto = "\n".join(f"- {i}" for i in bloco[1]) if bloco[0] == "lista" else bloco[1]
+                linhas += [("texto", p) for p in _fatiar(texto)]
+        pdf.set_font("Times", "", 11)
+        with pdf.table(col_widths=(52, largura - 52), width=largura, align="LEFT", first_row_as_headings=False,
+                       line_height=5.5, text_align="LEFT", borders_layout="ALL") as tabela:
+            for linha in linhas:
+                celulas = tabela.row()
+                if linha[0] == "campo":
+                    celulas.cell(para_latin1(linha[1]), style=FontFace(emphasis="BOLD"))
+                    celulas.cell(para_latin1(linha[2]))
+                else:
+                    celulas.cell(para_latin1(linha[1]), colspan=2)
+        pdf.ln(3)
+
+
 def para_pdf(doc, modo="minuta", comprimir=True):
     """O documento em PDF (A4, Times 12). Modo "minuta": título, texto e rodapé, sem número nem linha de assinatura.
     Modo "externo": acrescenta local, data e linha de assinatura, para incluir no SEI como documento externo."""
@@ -808,43 +961,46 @@ def para_pdf(doc, modo="minuta", comprimir=True):
         pdf.set_x(pdf.l_margin + recuo)
         pdf.multi_cell(0, 6, para_latin1(texto), align=alinhamento, new_x="LMARGIN", new_y="NEXT")
 
-    paragrafo(doc.tipo_sei.upper(), "B", "C")
-    pdf.ln(4)
-    if doc.destinatario:
-        for linha in doc.destinatario:
-            paragrafo(linha, alinhamento="L")
+    if doc.tipo == "escopo_projeto":
+        _escopo_em_tabelas(pdf, doc)
+    else:
+        paragrafo(doc.tipo_sei.upper(), "B", "C")
         pdf.ln(4)
-    if doc.assunto:
-        pdf.set_font("Times", "B", 12)
-        pdf.write(6, "Assunto: ")
-        pdf.set_font("Times", "", 12)
-        pdf.write(6, para_latin1(doc.assunto))
-        pdf.ln(10)
-    if doc.vocativo:
-        paragrafo(doc.vocativo, alinhamento="L")
-        pdf.ln(3)
-    for bloco in _agrupar_campos(doc.blocos):
-        if bloco[0] == "lista":
-            for item in bloco[1]:
-                paragrafo(f"- {item}", recuo=8)
+        if doc.destinatario:
+            for linha in doc.destinatario:
+                paragrafo(linha, alinhamento="L")
+            pdf.ln(4)
+        if doc.assunto:
+            pdf.set_font("Times", "B", 12)
+            pdf.write(6, "Assunto: ")
+            pdf.set_font("Times", "", 12)
+            pdf.write(6, para_latin1(doc.assunto))
+            pdf.ln(10)
+        if doc.vocativo:
+            paragrafo(doc.vocativo, alinhamento="L")
             pdf.ln(3)
-        elif bloco[0] == "campos":
-            for rotulo, valor in bloco[1]:
-                pdf.set_font("Times", "B", 12)
-                pdf.write(6, para_latin1(f"{rotulo}: "))
-                pdf.set_font("Times", "", 12)
-                pdf.write(6, para_latin1(valor))
-                pdf.ln(6)
+        for bloco in _agrupar_campos(doc.blocos):
+            if bloco[0] == "lista":
+                for item in bloco[1]:
+                    paragrafo(f"- {item}", recuo=8)
+                pdf.ln(3)
+            elif bloco[0] == "campos":
+                for rotulo, valor in bloco[1]:
+                    pdf.set_font("Times", "B", 12)
+                    pdf.write(6, para_latin1(f"{rotulo}: "))
+                    pdf.set_font("Times", "", 12)
+                    pdf.write(6, para_latin1(valor))
+                    pdf.ln(6)
+                pdf.ln(3)
+            elif bloco[0] == "titulo":
+                paragrafo(bloco[1], "B", "L")
+                pdf.ln(2)
+            else:
+                paragrafo(bloco[1])
+                pdf.ln(3)
+        if doc.fecho:
+            paragrafo(doc.fecho, alinhamento="L")
             pdf.ln(3)
-        elif bloco[0] == "titulo":
-            paragrafo(bloco[1], "B", "L")
-            pdf.ln(2)
-        else:
-            paragrafo(bloco[1])
-            pdf.ln(3)
-    if doc.fecho:
-        paragrafo(doc.fecho, alinhamento="L")
-        pdf.ln(3)
     if modo == "externo":
         pdf.ln(4)
         paragrafo(f"{CIDADE_PADRAO}, {_data_extenso(quando)}.", alinhamento="R")

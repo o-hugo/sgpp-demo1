@@ -15,7 +15,7 @@ TEXTO_INICIAL = "Escolha uma seção para ver o passo a passo. O guia mostra só
 # `orientacao` resume o que o modelo pede em cada parte. `no_sgpp` lista os campos do formulário de Elaboração que já
 # correspondem à parte (um teste confere que esses rótulos existem no app).
 ESCOPO_ATO_PGJ = [
-    {"numero": "I", "titulo": "Identificação do Projeto", "no_sgpp": ["Nome da iniciativa", "Unidade / Promotoria"],
+    {"numero": "I", "titulo": "Identificação do Projeto", "no_sgpp": ["Nome da iniciativa", "Unidade / Promotoria", "Sigla do projeto (nome reduzido)", "E-mail e telefone do gerente", "Equipe do projeto", "Patrocinador"],
      "orientacao": "Título do projeto e sigla (nome reduzido); unidade demandante (o órgão do MPAM ao qual o projeto se vincula, "
                    "de onde sai o gerente, que é membro ou servidor dessa unidade); gerente ou coordenador (nome e cargo) e seu "
                    "e-mail e telefone; equipe do projeto (nome, cargo, unidade, ramal e e-mail, com a indicação do gerente "
@@ -26,38 +26,38 @@ ESCOPO_ATO_PGJ = [
      "orientacao": "Descrição sucinta da iniciativa, um resumo claro, conciso e objetivo do que vai ser executado. Apresente a "
                    "ideia central, a finalidade, os procedimentos e a metodologia para chegar ao resultado, com metas possíveis "
                    "de alcançar com os recursos disponíveis."},
-    {"numero": "III", "titulo": "Justificativas", "no_sgpp": [],
+    {"numero": "III", "titulo": "Justificativas", "no_sgpp": ["Justificativas"],
      "orientacao": "O problema ou a oportunidade que justifica o desenvolvimento do projeto."},
-    {"numero": "IV", "titulo": "Objetivos do projeto", "no_sgpp": [],
+    {"numero": "IV", "titulo": "Objetivos do projeto", "no_sgpp": ["Objetivo geral", "Objetivos específicos"],
      "orientacao": "O que se pretende realizar para resolver o problema central ou explorar a oportunidade identificada. "
                    "Especifique o objetivo geral e os objetivos específicos."},
-    {"numero": "V", "titulo": "Unidades e órgãos envolvidos", "no_sgpp": [],
+    {"numero": "V", "titulo": "Unidades e órgãos envolvidos", "no_sgpp": ["Unidades e órgãos envolvidos"],
      "orientacao": "As unidades encarregadas de desenvolver uma atividade ou de fornecer produto ou serviço essencial à execução "
                    "do projeto. Considere também as instituições externas ao MPAM."},
-    {"numero": "VI", "titulo": "Público alvo", "no_sgpp": [],
+    {"numero": "VI", "titulo": "Público alvo", "no_sgpp": ["Público alvo"],
      "orientacao": "O público de acordo com a estratégia, para atingir as pessoas certas na hora certa e impactar quem realmente "
                    "fará a diferença para a iniciativa."},
-    {"numero": "VII", "titulo": "Tipo de iniciativa", "no_sgpp": [],
+    {"numero": "VII", "titulo": "Tipo de iniciativa", "no_sgpp": ["Tipo de iniciativa"],
      "orientacao": "Informe se o projeto é original (algo novo, sem precedentes na instituição) ou vinculado a outros projetos "
                    "concluídos, em andamento ou em estudo com os quais se relaciona."},
-    {"numero": "VIII", "titulo": "Alinhamento estratégico e aos ODS", "no_sgpp": ["Alinhamento estratégico", "Alinhamento ao PEN"],
+    {"numero": "VIII", "titulo": "Alinhamento estratégico e aos ODS", "no_sgpp": ["Alinhamento estratégico", "Alinhamento ao PEN", "ODS (Objetivos de Desenvolvimento Sustentável)"],
      "orientacao": "Alinhamento ao Planejamento Estratégico institucional (PEI-MPAM 2026-2029), ao Planejamento Estratégico "
                    "Nacional (PEN-MP 2020-2029) e aos Objetivos de Desenvolvimento Sustentável (ODS). Indique o objetivo "
                    "estratégico, o programa estratégico, a ação estratégica (do PEI-MPAM, do PEN-MP ou do Plano de Atuação "
                    "Setorial) e os ODS, que podem ser um só ou vários."},
-    {"numero": "IX", "titulo": "Valores institucionais", "no_sgpp": [],
+    {"numero": "IX", "titulo": "Valores institucionais", "no_sgpp": ["Valores institucionais"],
      "orientacao": "Justificativa em relação aos valores institucionais: resolutividade, transparência, proatividade, inovação "
                    "e cooperação."},
-    {"numero": "X", "titulo": "Governança em Tecnologia da Informação", "no_sgpp": [],
+    {"numero": "X", "titulo": "Governança em Tecnologia da Informação", "no_sgpp": ["Governança em Tecnologia da Informação"],
      "orientacao": "Detalhe os recursos tecnológicos, se aplicável."},
-    {"numero": "XI", "titulo": "Proteção de Dados e Segurança da Informação", "no_sgpp": [],
+    {"numero": "XI", "titulo": "Proteção de Dados e Segurança da Informação", "no_sgpp": ["Proteção de Dados e Segurança da Informação"],
      "orientacao": "Informe, no que for aplicável, a Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018) e as políticas "
                    "institucionais de segurança da informação e confidencialidade, especialmente quanto ao armazenamento, ao "
                    "tratamento, ao compartilhamento e ao acesso às informações dos participantes."},
-    {"numero": "XII", "titulo": "Detalhamento do Projeto", "no_sgpp": ["Início previsto", "Término previsto"],
+    {"numero": "XII", "titulo": "Detalhamento do Projeto", "no_sgpp": ["Início previsto", "Término previsto", "Duração prevista (em meses)", "Estimativa de custo (em reais)"],
      "orientacao": "Previsão de duração (em meses), de início e de conclusão (mês e ano); fase atual da iniciativa (a fase de "
                    "implementação, se parcial ou total); e estimativa de custo em reais."},
-    {"numero": "XIII", "titulo": "Escopo e etapas do projeto", "no_sgpp": [],
+    {"numero": "XIII", "titulo": "Escopo e etapas do projeto", "no_sgpp": ["Escopo e etapas do projeto"],
      "orientacao": "Detalhe as etapas do trabalho a ser executado, as principais fases."},
     {"numero": "XIV", "titulo": "Quadro de Indicadores e Metas", "no_sgpp": [],
      "orientacao": "Os indicadores e as metas que mostram se os resultados planejados foram alcançados. Para cada indicador: "
@@ -99,8 +99,9 @@ SECOES = [
         "passos": [
             "Abra **Elaboração** e preencha os dados do projeto. O rascunho pode ser salvo e retomado depois, quantas vezes você quiser.",
             "Ao salvar o rascunho, nada é exigido. Os campos obrigatórios só são conferidos no envio, e o app avisa o que falta.",
+            "Mais abaixo, o quadro **Escopo do projeto** tem uma caixa recolhível por parte do Modelo de Escopo (de I a XIII), com a orientação do modelo. Nada ali é obrigatório para salvar ou enviar.",
             "Clique em **Enviar para a Planejamento**. O projeto entra no portfólio com um código no formato AAAA-NNNN e fica travado para edição.",
-            "Para mudar algo depois do envio, use **Solicitar liberação** em **Meus Projetos** e explique o motivo.",
+            "Para mudar algo depois do envio, use **Solicitar liberação** em **Meus Projetos** e explique o motivo. Com a edição livre ou liberada, o Escopo se altera na seção **Escopo do projeto**, do mesmo lugar, com o botão **Salvar escopo**.",
             "O roteiro do que o projeto deve conter está na seção seguinte deste guia, o Modelo de Escopo do Ato nº 269/2026/PGJ.",
         ],
     },
@@ -109,7 +110,7 @@ SECOES = [
         "resumo": "As 17 partes do modelo de Escopo do Projeto, o roteiro que o projeto precisa seguir.",
         "niveis": _AUTORES,
         "intro": "Este é o Modelo de Escopo de Projeto, anexo do Ato nº 269/2026/PGJ. A ordem e os títulos são os do modelo. "
-                 "Onde aparece \"No SGPP\", o campo já existe em Elaboração.",
+                 "Onde aparece \"No SGPP\", o campo já existe em Elaboração. As tabelas das partes XIV a XVII ainda não têm campo.",
         "passos": [],
         "partes": ESCOPO_ATO_PGJ,
     },

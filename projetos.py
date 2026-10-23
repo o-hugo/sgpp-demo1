@@ -44,10 +44,54 @@ STATUS = ["Em elaboração", "Em execução", "Concluído", "Paralisado"]
 SITUACOES_ATUALIZACAO = ["Em dia", "Atenção", "Atrasado"]
 CONCLUSOES_PARECER = ["Favorável", "Favorável com ressalvas", "Desfavorável"]
 
+# Partes em texto do Modelo de Escopo de Projeto (Ato PGJ nº 269/2026) que o formulário de Elaboração acrescenta aos campos
+# do projeto. As partes I, II, VIII e XII também usam campos que já existiam (nome, unidade, ementa, alinhamentos, datas).
+# O rótulo é o do formulário e o do histórico: não pode ter vírgula. As tabelas (XIV a XVII) ficam para a etapa seguinte.
+CAMPOS_ESCOPO = [
+    {"chave": "esc_sigla", "parte": "I", "rotulo": "Sigla do projeto (nome reduzido)", "tipo": "texto",
+     "ajuda": "Nome reduzido do projeto, se houver."},
+    {"chave": "esc_contato_gerente", "parte": "I", "rotulo": "E-mail e telefone do gerente", "tipo": "texto",
+     "ajuda": "Contato do gerente ou coordenador do projeto."},
+    {"chave": "esc_equipe", "parte": "I", "rotulo": "Equipe do projeto", "tipo": "area",
+     "ajuda": "Uma pessoa por linha: nome, cargo, unidade, ramal e e-mail. Indique o gerente substituto."},
+    {"chave": "esc_patrocinador", "parte": "I", "rotulo": "Patrocinador", "tipo": "texto",
+     "ajuda": "A autoridade que defende o projeto, viabiliza recursos e intervém nos conflitos de maior relevância. Escolha só uma "
+              "(por exemplo, Procurador-Geral de Justiça, Corregedor-Geral, Secretário-Geral ou Coordenador de CAO)."},
+    {"chave": "esc_justificativas", "parte": "III", "rotulo": "Justificativas", "tipo": "area",
+     "ajuda": "O problema ou a oportunidade que justifica o desenvolvimento do projeto."},
+    {"chave": "esc_objetivo_geral", "parte": "IV", "rotulo": "Objetivo geral", "tipo": "area",
+     "ajuda": "O que se pretende realizar para resolver o problema central ou explorar a oportunidade identificada."},
+    {"chave": "esc_objetivos_especificos", "parte": "IV", "rotulo": "Objetivos específicos", "tipo": "area",
+     "ajuda": "Um objetivo por linha."},
+    {"chave": "esc_unidades_envolvidas", "parte": "V", "rotulo": "Unidades e órgãos envolvidos", "tipo": "area",
+     "ajuda": "As unidades que desenvolvem uma atividade ou fornecem produto ou serviço essencial à execução, dentro e fora do MPAM. "
+              "Uma por linha."},
+    {"chave": "esc_publico_alvo", "parte": "VI", "rotulo": "Público alvo", "tipo": "area",
+     "ajuda": "O público que a estratégia quer atingir, para impactar quem realmente fará a diferença para a iniciativa."},
+    {"chave": "esc_tipo_iniciativa", "parte": "VII", "rotulo": "Tipo de iniciativa", "tipo": "area",
+     "ajuda": "Original (algo novo, sem precedentes na instituição) ou vinculada a outros projetos concluídos, em andamento ou em estudo."},
+    {"chave": "esc_ods", "parte": "VIII", "rotulo": "ODS (Objetivos de Desenvolvimento Sustentável)", "tipo": "texto",
+     "ajuda": "Os ODS com os quais o projeto se alinha. Pode ser um só ou vários."},
+    {"chave": "esc_valores", "parte": "IX", "rotulo": "Valores institucionais", "tipo": "area",
+     "ajuda": "Justificativa em relação aos valores institucionais: resolutividade, transparência, proatividade, inovação e cooperação."},
+    {"chave": "esc_ti", "parte": "X", "rotulo": "Governança em Tecnologia da Informação", "tipo": "area",
+     "ajuda": "Detalhe os recursos tecnológicos, se aplicável."},
+    {"chave": "esc_lgpd", "parte": "XI", "rotulo": "Proteção de Dados e Segurança da Informação", "tipo": "area",
+     "ajuda": "No que for aplicável: a Lei nº 13.709/2018 (LGPD) e as políticas de segurança da informação e confidencialidade, "
+              "quanto ao armazenamento, ao tratamento, ao compartilhamento e ao acesso às informações dos participantes."},
+    {"chave": "esc_duracao", "parte": "XII", "rotulo": "Duração prevista (em meses)", "tipo": "texto",
+     "ajuda": "Previsão de duração do projeto, em meses."},
+    {"chave": "esc_custo", "parte": "XII", "rotulo": "Estimativa de custo (em reais)", "tipo": "texto",
+     "ajuda": "Estimativa de custo do projeto, em reais."},
+    {"chave": "esc_etapas", "parte": "XIII", "rotulo": "Escopo e etapas do projeto", "tipo": "area",
+     "ajuda": "As etapas do trabalho a ser executado e as principais fases."},
+]
+CHAVES_ESCOPO = [c["chave"] for c in CAMPOS_ESCOPO]
+
 CAMPOS_RASCUNHO = [
     "nome", "tipo", "area", "unidade", "municipio", "alinhamento_est", "alinhamento_pen", "ano",
     "sei", "status", "institucionalizado", "ementa", "inicio_previsto", "termino_previsto",
-]
+] + CHAVES_ESCOPO
 COLUNAS_RASCUNHOS = ["id", "autor_login", "autor_nome", "situacao", "criado_em", "atualizado_em",
                      "enviado_em", "projeto_n"] + CAMPOS_RASCUNHO
 COLUNAS_ATUALIZACOES = ["id", "projeto_n", "data_referencia", "situacao", "texto", "autor_login", "autor_nome", "registrado_em"]
@@ -64,8 +108,11 @@ COLUNAS_POWER_BI = [
     "Institucionalizado", "Descrição do Projeto", "Link", "Ato PGJ",
 ]
 
+COLUNAS_ESCOPO = ["projeto_n", "atualizado_em", "atualizado_por"] + CHAVES_ESCOPO
+
 ABAS_PROJETOS = {
     "Rascunhos": COLUNAS_RASCUNHOS,
+    "Escopo": COLUNAS_ESCOPO,
     "Atualizacoes": COLUNAS_ATUALIZACOES,
     "Pareceres": COLUNAS_PARECERES,
     "Comentarios": COLUNAS_COMENTARIOS,
@@ -261,6 +308,7 @@ def dados_vazios():
         "nome": "", "tipo": TIPOS[0], "area": "", "unidade": "", "municipio": "Manaus",
         "alinhamento_est": "", "alinhamento_pen": "", "ano": datetime.now().year, "sei": "",
         "status": STATUS[0], "institucionalizado": "Não", "ementa": "", "inicio_previsto": "", "termino_previsto": "",
+        **{chave: "" for chave in CHAVES_ESCOPO},
     }
 
 
@@ -399,6 +447,70 @@ def enviar_rascunho(df, rascunho, quando=None):
         "ID_RASCUNHO": rascunho["id"], "PEDIDO_LIBERACAO": "", "REVISAO": REVISAO_AGUARDANDO, "ID_PROJETO": str(n),
     }
     return pd.concat([df, pd.DataFrame([linha])], ignore_index=True), n, codigo, None
+
+
+# ------------------------------------------------------------------ escopo do projeto (partes em texto)
+
+def escopo_do_rascunho(rascunho):
+    """Os textos do Escopo que estão num rascunho (dicionário chave -> texto)."""
+    return {chave: texto(rascunho.get(chave)) for chave in CHAVES_ESCOPO}
+
+
+def escopo_do_projeto(abas, n):
+    """Os textos do Escopo de um projeto enviado (chave -> texto). Tudo vazio se nunca foram preenchidos."""
+    e = abas["Escopo"]
+    achados = e[e["projeto_n"].map(_normalizar_n) == _normalizar_n(n)]
+    if achados.empty:
+        return {chave: "" for chave in CHAVES_ESCOPO}
+    linha = achados.iloc[-1]
+    return {chave: texto(linha[chave]) for chave in CHAVES_ESCOPO}
+
+
+def _gravar_escopo(abas, n, dados, autor_nome, quando):
+    """Uma linha por projeto: atualiza a que existe ou cria a primeira."""
+    linha = {"projeto_n": _normalizar_n(n), "atualizado_em": quando, "atualizado_por": autor_nome,
+             **{chave: texto(dados.get(chave)) for chave in CHAVES_ESCOPO}}
+    e = abas["Escopo"]
+    achados = e.index[e["projeto_n"].map(_normalizar_n) == _normalizar_n(n)]
+    if len(achados):
+        for coluna, valor in linha.items():
+            e.at[achados[-1], coluna] = valor
+    else:
+        abas["Escopo"] = pd.concat([e, pd.DataFrame([linha], columns=COLUNAS_ESCOPO)], ignore_index=True)
+
+
+def copiar_escopo_do_rascunho(abas, rascunho, n, quando=None):
+    """No envio, os textos do Escopo do rascunho passam a ser os do projeto. Sem nenhum texto, não cria linha."""
+    dados = escopo_do_rascunho(rascunho)
+    if any(dados.values()):
+        _gravar_escopo(abas, n, dados, texto(rascunho.get("autor_nome")), quando or agora())
+
+
+def rotulos_alterados_do_escopo(antes, depois):
+    """Rótulos (os do formulário) dos campos do Escopo que mudaram entre dois dicionários."""
+    return [c["rotulo"] for c in CAMPOS_ESCOPO if texto(antes.get(c["chave"])) != texto(depois.get(c["chave"]))]
+
+
+def salvar_escopo(abas, df, n, dados, autor_nome, quando=None):
+    """Grava o Escopo de um projeto já enviado, pelo gestor, com as mesmas regras de qualquer edição: projeto travado
+    não aceita; o que estava liberado volta a ficar travado; o que estava devolvido (ou com a revisão concluída) volta
+    para a fila da Planejamento. Devolve (df, alterados, travou, reenviou, erro): `alterados` são os rótulos dos campos
+    que mudaram (vazio se nada mudou, e então nada é gravado)."""
+    indice = _indice(df, n)
+    if indice is None:
+        return df, [], False, False, "Projeto não encontrado."
+    if texto(df.at[indice, "SITUACAO_REGISTRO"]) != SITUACAO_ATIVO:
+        return df, [], False, False, "Só é possível alterar o escopo de um projeto ativo."
+    if texto(df.at[indice, "EDICAO"]) == EDICAO_TRAVADA:
+        return df, [], False, False, "O projeto está travado. Peça a liberação da edição à Planejamento."
+    novo = {chave: texto(dados.get(chave)) for chave in CHAVES_ESCOPO}
+    alterados = rotulos_alterados_do_escopo(escopo_do_projeto(abas, n), novo)
+    if not alterados:
+        return df, [], False, False, None
+    _gravar_escopo(abas, n, novo, autor_nome, quando or agora())
+    df, travados = retravar_apos_edicao(df, [n])
+    df, reenviados = marcar_reenvio(df, [n])
+    return df, alterados, bool(travados), bool(reenviados), None
 
 
 # ------------------------------------------------------------------ trava de edição

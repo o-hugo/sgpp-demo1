@@ -961,6 +961,7 @@ def enviar_para_planejamento(id_rascunho):
 
     def alterar(abas_):
         projetos.marcar_rascunho_enviado(abas_, id_rascunho, n)
+        projetos.copiar_escopo_do_rascunho(abas_, rascunho, n)
         projetos.acrescentar_eventos(abas_, projetos.evento(n, login, nome, "enviado", f"Código {codigo}"))
         return None
 
@@ -968,6 +969,34 @@ def enviar_para_planejamento(id_rascunho):
     if erro:
         alerta_aviso(f"O projeto foi enviado (Nº {n}, código {codigo}), mas o rascunho não pôde ser marcado como enviado: {erro}")
     return n, codigo
+
+NOTAS_DA_PARTE = {
+    "I": "O nome da iniciativa e a unidade ficam nos campos do projeto. O gerente é quem elabora e assina.",
+    "VIII": "O alinhamento estratégico e o alinhamento ao PEN ficam nos campos do projeto.",
+    "XII": "O início e o término previstos ficam nos campos do projeto.",
+}
+
+def campos_do_escopo(valores, prefixo):
+    """Os campos de texto do Escopo (Ato nº 269/2026/PGJ), um quadro por parte do modelo. Devolve {chave: texto}.
+    Serve ao formulário de Elaboração e à edição do projeto já enviado; `valores` traz o que já está salvo."""
+    novos = {}
+    for parte in guia.ESCOPO_ATO_PGJ:
+        campos_da_parte = [c for c in projetos.CAMPOS_ESCOPO if c['parte'] == parte['numero']]
+        if not campos_da_parte:
+            continue
+        with st.expander(f"{parte['numero']}. {parte['titulo']}"):
+            st.caption(parte['orientacao'])
+            if parte['numero'] in NOTAS_DA_PARTE:
+                st.caption(NOTAS_DA_PARTE[parte['numero']])
+            for campo in campos_da_parte:
+                chave_campo = f"{prefixo}_{campo['chave']}"
+                if campo['tipo'] == "area":
+                    novos[campo['chave']] = st.text_area(campo['rotulo'], value=valores.get(campo['chave'], ""), help=campo['ajuda'],
+                                                         height=110, key=chave_campo)
+                else:
+                    novos[campo['chave']] = st.text_input(campo['rotulo'], value=valores.get(campo['chave'], ""), help=campo['ajuda'],
+                                                          key=chave_campo)
+    return novos
 
 def tela_elaboracao(df_completo, modo_sharepoint):
     faixa_titulo("Elaboração", "Monte o projeto com calma: a Planejamento só vê quando você enviar", "edit_note")
@@ -1030,6 +1059,10 @@ def tela_elaboracao(df_completo, modo_sharepoint):
         termino = c13.date_input("Término previsto", value=projetos.parse_data(base["termino_previsto"]), format="DD/MM/YYYY", key=f"r_ter_{k}")
         ementa = st.text_area("Ementa (objetivo) *", value=base["ementa"], key=f"r_ementa_{k}")
 
+        st.markdown("## Escopo do projeto (Ato nº 269/2026/PGJ)")
+        st.caption("Nada aqui é obrigatório para salvar ou enviar. O Escopo completo é o documento que a Planejamento e o Comitê analisam; as tabelas de indicadores, recursos, riscos e cronograma ainda não estão no formulário.")
+        texto_escopo = campos_do_escopo({c: base[c] for c in projetos.CHAVES_ESCOPO}, f"r_{k}")
+
         b1, b2, _ = st.columns([1.5, 1, 2])
         enviar = b1.form_submit_button("Enviar para a Planejamento", icon=":material/send:", type="primary")
         salvar = b2.form_submit_button("Salvar rascunho", icon=":material/save:")
@@ -1039,7 +1072,7 @@ def tela_elaboracao(df_completo, modo_sharepoint):
         dados = {"nome": nome_proj, "tipo": tipo, "area": area, "unidade": unidade, "municipio": municipio,
                  "alinhamento_est": alinhamento_est, "alinhamento_pen": alinhamento_pen, "ano": ano, "sei": sei,
                  "status": status, "institucionalizado": institucionalizado, "ementa": ementa,
-                 "inicio_previsto": inicio, "termino_previsto": termino}
+                 "inicio_previsto": inicio, "termino_previsto": termino, **texto_escopo}
         erro = projetos.validar_dados(dados, para_envio=enviar)
         if erro:
             alerta_erro(erro)
@@ -1122,6 +1155,66 @@ def salvar_edicoes_gestor(df_completo, versao, df_origem, df_editado):
         st.session_state['docs_depois'] = (reenviados[0], "memorando_reenvio")
     st.rerun()
 
+def salvar_escopo_do_projeto(numero, dados):
+    """Grava o Escopo de um projeto do gestor numa gravação só: os textos, o que isso provoca no ciclo (volta a travar,
+    volta para a revisão) e o histórico. Devolve o resultado (alterados, travou, reenviou), ou None se não gravou."""
+    login, nome = ator_da_sessao()
+    if not dados_internos.pode_gravar_projetos(obter_armazenamento_interno(), em_sharepoint()):
+        alerta_erro("A fonte de dados do SGPP está num arquivo local do servidor, que some quando ele reinicia. "
+                    "Peça à DPLAN para configurar o item_id_interno nos Secrets antes de gravar projetos.")
+        return None
+    resultado = {}
+
+    def alterar(abas):
+        df = _preparar_dataframe(abas[dados_internos.ABA_PROJETOS])
+        df_novo, alterados, travou, reenviou, erro = projetos.salvar_escopo(abas, df, numero, dados, nome)
+        if erro:
+            return erro
+        abas[dados_internos.ABA_PROJETOS] = df_novo.drop(columns=['SEI_Limpo', 'Link_SEI'], errors='ignore')
+        eventos = [projetos.evento(numero, login, nome, "editado", "Campos: " + ", ".join(f"Escopo: {r}" for r in alterados))]
+        if travou:
+            eventos.append(projetos.evento(numero, login, nome, "travado", "Edição travada novamente depois de salva"))
+        if reenviou:
+            eventos.append(projetos.evento(numero, login, nome, "reenviado", "Ajustes enviados para nova revisão"))
+        projetos.acrescentar_eventos(abas, eventos)
+        resultado.update(alterados=alterados, travou=travou, reenviou=reenviou)
+        return None
+
+    erro = alterar_planilha_interna(alterar)
+    _carregar_dados_cache.clear()
+    if erro:
+        alerta_erro(erro)
+        return None
+    return resultado
+
+def bloco_escopo_gestor(livres):
+    """Escopo do projeto (as partes em texto) dos projetos que o gestor pode editar agora."""
+    st.markdown("## Escopo do projeto")
+    st.caption("O Modelo de Escopo do Ato nº 269/2026/PGJ, em texto. Vale para os projetos com edição livre ou liberada. Depois de salvar, um "
+               "projeto liberado volta a ficar travado e um projeto devolvido ou com a revisão concluída volta para a fila da Planejamento.")
+    abas = ler_abas_ou_erro()
+    if abas is None:
+        return
+    por_numero = {projetos.chave(r): r for _, r in livres.iterrows()}
+    escolhido = st.selectbox("Projeto", list(por_numero), format_func=lambda n: rotulo_projeto(por_numero[n]), key="escopo_projeto_sel")
+    atual = projetos.escopo_do_projeto(abas, escolhido)
+    with st.form(f"form_escopo_{escolhido}"):
+        novos = campos_do_escopo(atual, f"e_{escolhido}")
+        salvar = st.form_submit_button("Salvar escopo", icon=":material/save:", type="primary")
+    if not salvar:
+        return
+    if not projetos.rotulos_alterados_do_escopo(atual, novos):
+        alerta_info("Nenhuma alteração para salvar.")
+        return
+    resultado = salvar_escopo_do_projeto(escolhido, novos)
+    if resultado is None:
+        return
+    st.session_state['aviso_meus'] = ("Escopo do projeto salvo." + (" O projeto voltou a ficar travado." if resultado['travou'] else "")
+                                      + (" Os ajustes foram reenviados à Planejamento para nova revisão." if resultado['reenviou'] else ""))
+    if resultado['reenviou']:
+        st.session_state['docs_depois'] = (escolhido, "memorando_reenvio")
+    st.rerun()
+
 def pedir_liberacao(numero, motivo):
     login, nome = ator_da_sessao()
     df_atual, versao_atual = carregar_dados(usar_cache=False)
@@ -1149,6 +1242,19 @@ def html_ficha_cabecalho(projeto):
             f"<div class='nome'>{esc(projeto['Nome da Iniciativa'])}</div>"
             f"<div class='meta'>{esc(projeto['Gestor'])} · {esc(projeto['Unidade'])}"
             f"{' · Previsto: ' + esc(datas) if datas else ''}</div><div>{''.join(chips)}</div></div>")
+
+def html_escopo(escopo):
+    """O Escopo do projeto para leitura, parte por parte. Só aparece o que foi escrito; todo texto é escapado."""
+    partes = []
+    for parte in guia.ESCOPO_ATO_PGJ:
+        itens = []
+        for campo in (c for c in projetos.CAMPOS_ESCOPO if c['parte'] == parte['numero']):
+            valor = projetos.texto(escopo.get(campo['chave']))
+            if valor:
+                itens.append(f"<p><b>{esc(campo['rotulo'])}</b><br><span class='texto-livre'>{esc(valor).replace(chr(10), '<br>')}</span></p>")
+        if itens:
+            partes.append(f"<h4>{esc(parte['numero'])}. {esc(parte['titulo'])}</h4>{''.join(itens)}")
+    return "".join(partes) or "<p class='linha-tempo-vazia'>O Escopo do projeto ainda não foi preenchido.</p>"
 
 def mostrar_atualizacoes(abas, n):
     atualizacoes = projetos.do_projeto(abas, "Atualizacoes", n)
@@ -1206,9 +1312,9 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
     pode_parecer = not arquivado and projetos.pode("emitir_parecer", nivel)
     ve_pareceres = dono or nivel in ("administrador", "planejamento", "comite")
 
-    aba_atu, aba_par, aba_com, aba_dados, aba_tempo = st.tabs([
+    aba_atu, aba_par, aba_com, aba_dados, aba_escopo, aba_tempo = st.tabs([
         ":material/update: Atualizações", ":material/rate_review: Pareceres", ":material/forum: Comentários",
-        ":material/description: Dados completos", ":material/timeline: Linha do tempo"])
+        ":material/description: Dados completos", ":material/assignment: Escopo", ":material/timeline: Linha do tempo"])
 
     with aba_atu:
         if pode_atualizar:
@@ -1263,6 +1369,9 @@ def tela_acompanhamento(df_completo, modo_sharepoint):
 
     with aba_dados:
         st.markdown(html_dados_completos(projeto, coordenacao=nivel in ("administrador", "planejamento", "comite")), unsafe_allow_html=True)
+
+    with aba_escopo:
+        st.markdown(html_escopo(projetos.escopo_do_projeto(abas, escolhido)), unsafe_allow_html=True)
 
     with aba_tempo:
         st.markdown(html_linha_do_tempo(projetos.linha_do_tempo(abas, escolhido), projeto.get('Ano de criação')), unsafe_allow_html=True)
@@ -1575,6 +1684,8 @@ def painel_revisao_projeto(linha, abas, chave):
     n = projetos.chave(linha)
     with st.expander("Ver o projeto inteiro", icon=":material/description:"):
         st.markdown(html_dados_completos(linha, coordenacao=True), unsafe_allow_html=True)
+        st.markdown("**Escopo do projeto**")
+        st.markdown(html_escopo(projetos.escopo_do_projeto(abas, n)), unsafe_allow_html=True)
     st.markdown("**Comentários com o gestor**")
     st.markdown(html_comentarios(projetos.comentarios_do_projeto(abas, n), st.session_state['login_rede']), unsafe_allow_html=True)
     texto_c = st.text_area("Comentário ou orientação para o gestor", key=f"rev_texto_{chave}_{n}",
@@ -1639,6 +1750,8 @@ def tela_revisao(df_completo, modo_sharepoint):
                 st.markdown(f"<p class='texto-livre'>{esc(pedido['motivo'])}</p>", unsafe_allow_html=True)
                 with st.expander("Ver o projeto inteiro", icon=":material/description:"):
                     st.markdown(html_dados_completos(linha, coordenacao=True), unsafe_allow_html=True)
+                    st.markdown("**Escopo do projeto**")
+                    st.markdown(html_escopo(projetos.escopo_do_projeto(abas, n)), unsafe_allow_html=True)
                 resposta = st.text_input("Comentário para o gestor (obrigatório para negar)", key=f"cm_ped_{n}")
                 b1, b2, _ = st.columns([1, 1, 3])
                 if b1.button("Liberar", icon=":material/lock_open:", type="primary", key=f"liberar_{n}"):
@@ -1886,7 +1999,7 @@ def dialogo_ficha(id_projeto):
         st.code(sei, language=None)
 
     abas = ler_abas_ou_erro()
-    rotulos = [":material/description: Dados completos", ":material/update: Atualizações"]
+    rotulos = [":material/description: Dados completos", ":material/assignment: Escopo", ":material/update: Atualizações"]
     if dono or coordenacao:
         rotulos.append(":material/rate_review: Pareceres")
     if projetos.pode_comentar(nivel, nome, projeto['Gestor']):
@@ -1902,6 +2015,8 @@ def dialogo_ficha(id_projeto):
         with aba:
             if abas is None:
                 st.caption("Não foi possível ler os dados internos agora.")
+            elif "Escopo" in rotulo:
+                st.markdown(html_escopo(projetos.escopo_do_projeto(abas, n)), unsafe_allow_html=True)
             elif "Atualizações" in rotulo:
                 mostrar_atualizacoes(abas, n)
             elif "Pareceres" in rotulo:
@@ -2202,10 +2317,11 @@ def tela_principal():
                 if st.button("Salvar Alterações", icon=":material/save:", type="primary", key="salvar_meus"):
                     # Grava sobre a mesma versão que o usuário viu: se alguém alterou a planilha depois, dá conflito
                     salvar_edicoes_gestor(df_completo, versao, livres_filtrado, df_editado_user)
+                bloco_escopo_gestor(livres)
 
             if not travados.empty:
                 st.markdown("## Enviados à Planejamento")
-                st.caption("Estes projetos estão travados para edição. Para alterar algum, peça a liberação.")
+                st.caption("Estes projetos estão travados para edição, inclusive o Escopo. Para alterar algum, peça a liberação.")
                 tabela_travados = travados.assign(Edição=travados.apply(situacao_da_edicao, axis=1))
                 st.dataframe(
                     tabela_travados[['CODIGO', 'Nome da Iniciativa', 'Status', 'ENVIADO_EM', 'REVISAO', 'Edição']],
